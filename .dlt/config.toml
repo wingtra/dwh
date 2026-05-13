@@ -1,0 +1,11 @@
+[extract]
+max_parallel_items = 3
+
+[normalize]
+workers = 2
+
+[load]
+workers = 3
+
+[destination.bigquery]
+location = "europe-west1"
