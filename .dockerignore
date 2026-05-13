@@ -1,0 +1,10 @@
+.git
+.gitignore
+infra/
+*.md
+.dlt/secrets.toml
+*.env
+*.key
+*.pem
+__pycache__
+.venv
