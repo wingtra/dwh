@@ -34,5 +34,26 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+*.env
+!*.env.example
 credentials/
 secrets/
+
+# SSH keys
+*.pem
+*.key
+infra/odoo_sh_id_ed25519
+infra/odoo_sh_id_ed25519.pub
+
+# dlt secrets
+.dlt/secrets.toml
+
+# MCP server config (contains API keys)
+.mcp.json
+
+# Scratch / working files
+tmp/
+debug sqls/
+
+# Obsidian notes config
+.obsidian/
