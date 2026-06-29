@@ -16,7 +16,8 @@
 with source as (
     select *
     from {{ source('dl_revolut', 'transactions') }}
-    where transaction_leg_key is not null
+    where _dlt_deleted_at is null
+      and transaction_leg_key is not null
 ),
 
 latest as (

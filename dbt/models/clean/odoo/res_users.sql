@@ -30,3 +30,5 @@ SELECT
     property_warehouse_id as warehouse_property_raw
 
 FROM {{ source('odoo', 'res_users') }}
+
+WHERE _dlt_deleted_at IS NULL

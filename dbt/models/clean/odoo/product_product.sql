@@ -37,3 +37,5 @@ SELECT
     safe_cast(json_value(standard_price, '$."1"') as float64) as standard_price_ag
 
 FROM {{ source('odoo', 'product_product') }}
+
+WHERE _dlt_deleted_at IS NULL

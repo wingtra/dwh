@@ -38,3 +38,5 @@ SELECT
     days_to_prepare_mo
 
 FROM {{ source('odoo', 'mrp_bom') }}
+
+WHERE _dlt_deleted_at IS NULL

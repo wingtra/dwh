@@ -47,3 +47,5 @@ SELECT
     cyclic_inventory_frequency
 
 FROM {{ source('odoo', 'stock_location') }}
+
+WHERE _dlt_deleted_at IS NULL

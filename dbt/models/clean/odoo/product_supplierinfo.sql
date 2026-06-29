@@ -44,3 +44,5 @@ SELECT
     delay as lead_time_days
 
 FROM {{ source('odoo', 'product_supplierinfo') }}
+
+WHERE _dlt_deleted_at IS NULL

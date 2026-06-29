@@ -149,4 +149,5 @@ FROM {{ source('odoo', 'product_template') }}
 -- Filter out CEE (company_id=8) per project policy: CEE is the outdated Wingtra - CEE entity.
 -- Multi-company shared templates (company_id IS NULL) and the single Corp template
 -- (company_id=9, an Odoo "Discount" service stub) are kept.
-WHERE company_id IS NULL OR company_id != 8
+WHERE _dlt_deleted_at IS NULL
+  AND (company_id IS NULL OR company_id != 8)

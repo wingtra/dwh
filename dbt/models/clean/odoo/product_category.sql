@@ -45,3 +45,5 @@ SELECT
     restrict_global_discount as restricts_global_discount
 
 FROM {{ source('odoo', 'product_category') }}
+
+WHERE _dlt_deleted_at IS NULL
