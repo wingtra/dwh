@@ -1,0 +1,129 @@
+version: 2
+
+seeds:
+  - name: revolut_cardholder_team_mapping
+    description: |
+      Manually maintained mapping from Revolut cardholder names to reporting
+      teams for finance and AI spend attribution. This is not an HR source
+      of truth; it exists only to attach team context to Revolut card spend
+      in `ol_finance.revolut_transactions`.
+
+      Cardholders seen in transactions but not in this mapping are deliberately
+      left unmapped with NULL team. Refresh manually when finance reporting
+      needs a new cardholder-to-team assignment.
+    columns:
+      - name: cardholder_name
+        description: Exact cardholder name as emitted by Revolut and cleaned in CL.
+        tests: [not_null, unique]
+      - name: team
+        description: Reporting team used for finance and AI spend attribution.
+        tests: [not_null]
+
+  - name: employee_email_aliases_seed
+    description: |
+      Manually maintained mapping of source-system email aliases to canonical
+      Wingtra employee emails. Used for source export quirks where third-party
+      systems carry shortened or legacy emails that do not join to the
+      canonical org structure.
+    columns:
+      - name: source_system
+        description: Source system where the alternate email appears.
+        tests: [not_null]
+      - name: alternate_email
+        description: Source-system email alias that needs canonicalization.
+        tests: [not_null]
+      - name: canonical_email
+        description: Canonical Wingtra employee email.
+        tests: [not_null]
+      - name: canonical_person
+        description: Canonical employee display name.
+        tests: [not_null]
+      - name: mapping_reason
+        description: Reason this alias mapping is needed.
+
+  - name: claude_seat_usage_2026_05
+    description: |
+      Anthropic Claude per-seat usage report for May 2026, downloaded from the
+      Anthropic Console spend report. One row per user, product, and model for
+      the report period.
+
+      All users in this file are seats paid for by Marco Schicker on the
+      Claude Team plan. `total_net_spend_usd` is the prepay-adjusted cost
+      Anthropic actually billed; `total_gross_spend_usd` is the pre-credit
+      list-price equivalent and is the better signal for usage share.
+
+      `report_period_start` and `report_period_end` were appended at load from
+      the filename because Anthropic does not include them in the export.
+    columns:
+      - name: user_email
+        description: User's Wingtra email.
+        tests: [not_null]
+      - name: account_uuid
+        description: Anthropic-internal account UUID for this seat.
+      - name: product
+        description: Anthropic product surface.
+        tests: [not_null]
+      - name: model
+        description: Claude model name; NULL on Anthropic's synthetic aggregate row.
+      - name: report_period_start
+        description: Inclusive start date of the report period.
+        tests: [not_null]
+      - name: report_period_end
+        description: Inclusive end date of the report period.
+        tests: [not_null]
+
+  - name: claude_members_2026_06_18
+    description: |
+      Anthropic Claude Team members export downloaded on 2026-06-18. One row
+      per member in the Claude admin members list, including role, status, and
+      seat tier.
+
+      Keep dated Claude member exports append-only. `cl_seeds.claude_member_snapshots`
+      unions the dated exports and `ol_finance.claude_seats` derives the
+      observed seat history from them.
+    columns:
+      - name: user_email
+        description: User's Wingtra email from the Claude members export.
+        tests: [not_null, unique]
+      - name: member_name
+        description: Display name from the Claude members export.
+      - name: member_role
+        description: Claude admin role for the member.
+        tests: [not_null]
+      - name: member_status
+        description: Membership status from the Claude admin export.
+        tests: [not_null]
+      - name: seat_tier
+        description: Claude Team seat tier.
+        tests: [not_null]
+      - name: export_date
+        description: Date the members export was downloaded.
+        tests: [not_null]
+
+  - name: claude_members_2026_06_23
+    description: |
+      Anthropic Claude Team members export downloaded on 2026-06-23. One row
+      per member in the Claude admin members list, including role, status, and
+      seat tier.
+
+      Keep dated Claude member exports append-only. `cl_seeds.claude_member_snapshots`
+      unions the dated exports and `ol_finance.claude_seats` derives the
+      observed seat history from them.
+    columns:
+      - name: user_email
+        description: User's Wingtra email from the Claude members export.
+        tests: [not_null, unique]
+      - name: member_name
+        description: Display name from the Claude members export.
+      - name: member_role
+        description: Claude admin role for the member.
+        tests: [not_null]
+      - name: member_status
+        description: Membership status from the Claude admin export.
+        tests: [not_null]
+      - name: seat_tier
+        description: Claude Team seat tier.
+        tests: [not_null]
+      - name: export_date
+        description: Date the members export was downloaded.
+        tests: [not_null]

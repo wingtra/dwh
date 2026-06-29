@@ -1,0 +1,33 @@
+version: 2
+
+models:
+  - name: employee_email_aliases
+    description: |
+      One row per source-system alternate email address that must be normalized
+      to a canonical Wingtra employee email before downstream joins. Used by
+      source-conformed CL models to absorb source export quirks before OL/BL.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: finance
+        layer: meta
+        consumer_type: internal_mapping
+        grain: source_system_alternate_email
+    columns:
+      - name: source_system
+        description: Source system where the alternate email appears.
+        tests: [not_null]
+      - name: alternate_email
+        description: Lowercase source-system email value that should not be exposed as the canonical employee email.
+        tests: [not_null]
+      - name: canonical_email
+        description: Lowercase canonical Wingtra employee email used for joins to org membership and applications.
+        tests: [not_null]
+      - name: canonical_person
+        description: Canonical employee display name associated with the canonical email.
+        tests: [not_null]
+      - name: mapping_reason
+        description: Human-readable reason why this alias mapping exists.
+      - name: source_system_alternate_email
+        description: Composite grain of source_system and alternate_email.
+        tests: [not_null, unique]
