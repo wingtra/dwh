@@ -4,6 +4,8 @@
 
 A daily automated pipeline that extracts data from Wingtra's Odoo.sh production instance and loads it into BigQuery for reporting.
 
+Repository location: `pipelines/sources/odoo/`
+
 ```
                         Odoo.sh (Production)
                         ┌─────────────────────┐
