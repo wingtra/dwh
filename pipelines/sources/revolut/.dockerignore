@@ -1,0 +1,11 @@
+.git
+.gitignore
+infra/config.env
+*.env
+*.key
+*.pem
+*.pub
+__pycache__/
+*.pyc
+.venv/
+docs/

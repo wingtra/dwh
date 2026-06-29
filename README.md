@@ -18,3 +18,4 @@ The dbt project owns cross-source modeling, tests, and business-facing marts.
 ## Current Sources
 
 - [Odoo pipeline overview](pipelines/sources/odoo/docs/pipeline-overview.md)
+- [Revolut pipeline overview](pipelines/sources/revolut/docs/pipeline-overview.md)
