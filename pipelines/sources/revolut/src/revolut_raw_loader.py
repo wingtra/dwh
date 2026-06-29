@@ -1,8 +1,9 @@
 """Revolut Business API -> GCS raw landing -> BigQuery DL append tables.
 
-This loader is intentionally raw-only. It does not run dbt and does not depend
-on the Odoo/Postgres pipeline image. The DL tables are append-only extraction
-logs; CL is responsible for deduping to the latest source-conformed state.
+This loader is intentionally raw-only. It does not run downstream transformations
+and does not depend on the Odoo/Postgres pipeline image. The DL tables are
+append-only extraction logs; CL is responsible for deduping to the latest
+source-conformed state.
 """
 
 from __future__ import annotations

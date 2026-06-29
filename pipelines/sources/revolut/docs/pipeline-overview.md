@@ -58,7 +58,7 @@ Repository location: `pipelines/sources/revolut/`
 ### 1. Trigger (Cloud Scheduler)
 - Cron fires weekly at 05:00 Europe/Zurich
 - Sends authenticated HTTP POST directly to Cloud Run Job `revolut-raw-loader`
-- The cleaned target state is raw-loader only; dbt orchestration is handled separately
+- The cleaned target state is raw-loader only; downstream modeling is handled separately
 
 ### 2. Authenticate (`revolut_raw_loader.py`)
 - Reads the API private key and refresh token from **Secret Manager**
@@ -145,14 +145,3 @@ LIMIT 5
 gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=revolut-raw-loader" \
   --project=wingtra-dwh --limit=50 --format="value(textPayload)" --freshness=2h
 ```
-
-## Cleanup note
-
-The old combined/dbt paths should not be reintroduced into this source pipeline.
-After the direct raw-loader scheduler is confirmed, retire stale cloud resources
-in a separate approval-gated step:
-
-- Scheduler `revolut-raw-and-dbt-weekly`
-- Workflow `revolut-raw-and-dbt`
-- Legacy Cloud Run Job `revolut-to-bq-dbt`
-- Cloud Run Job `revolut-dbt-build`, if dbt is not kept as a separate manual job
