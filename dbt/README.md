@@ -37,7 +37,7 @@ Job, and dbt selectors decide which models are included in a given run.
 Default runtime behavior:
 
 ```text
-Cloud Scheduler -> Cloud Run Job dbt-runner -> dbt build --selector daily
+Cloud Scheduler -> Cloud Run Job dbt-runner -> dbt build --selector weekly
 ```
 
 Use model tags and `selectors.yml` for daily, weekly, and domain-specific
@@ -48,6 +48,9 @@ the same generic Cloud Run Job can run different schedules:
 dbt-runner-daily  -> DBT_SELECTOR=daily
 dbt-runner-weekly -> DBT_SELECTOR=weekly
 ```
+
+Current production dbt work is weekly because the Revolut raw loader runs
+weekly. Enable the daily scheduler only after daily-tagged dbt resources exist.
 
 The `scheduled` selector is a manual catch-up selector for the union of daily
 and weekly resources. Do not use it as the default daily production selector,

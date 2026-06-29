@@ -20,7 +20,7 @@ clean-targets:
 seeds:
   wingtra_dwh:
     +schema: seeds
-    +tags: ["daily", "finance"]
+    +tags: ["weekly", "finance"]
     claude_seat_usage_2026_05:
       +column_types:
         user_email: STRING
@@ -66,12 +66,12 @@ models:
         +schema: cl_odoo
       revolut:
         +schema: cl_revolut
-        +tags: ["daily", "finance"]
+        +tags: ["weekly", "finance"]
       external:
         +schema: cl_external
       seeds:
         +schema: cl_seeds
-        +tags: ["daily", "finance"]
+        +tags: ["weekly", "finance"]
     object:
       +materialized: table
       +schema: ol
@@ -79,7 +79,7 @@ models:
         +schema: ol_ops
       finance:
         +schema: ol_finance
-        +tags: ["daily", "finance"]
+        +tags: ["weekly", "finance"]
     business:
       +materialized: table
       +schema: bl
@@ -87,7 +87,7 @@ models:
         +schema: bl_ops
       finance:
         +schema: bl_finance
-        +tags: ["daily", "finance"]
+        +tags: ["weekly", "finance"]
     metadata:
       +materialized: view
       +schema: meta

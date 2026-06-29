@@ -6,7 +6,7 @@
 {{
     config(
         materialized='view',
-        tags=['daily', 'finance']
+        tags=['weekly', 'finance']
     )
 }}
 

@@ -88,13 +88,18 @@ upsert_scheduler() {
     --format="value(name,schedule,timeZone,state)"
 }
 
-upsert_scheduler \
-  "${DBT_DAILY_SCHEDULER_JOB_NAME:-dbt-runner-daily}" \
-  "${DBT_DAILY_SELECTOR:-daily}" \
-  "${DBT_DAILY_SCHEDULE:-0 6 * * *}" \
-  "Daily dbt build"
+if [[ "${DBT_ENABLE_DAILY_SCHEDULER:-false}" == "true" ]]; then
+  upsert_scheduler \
+    "${DBT_DAILY_SCHEDULER_JOB_NAME:-dbt-runner-daily}" \
+    "${DBT_DAILY_SELECTOR:-daily}" \
+    "${DBT_DAILY_SCHEDULE:-0 6 * * *}" \
+    "Daily dbt build"
+else
+  echo
+  echo "Daily dbt scheduler disabled. Set DBT_ENABLE_DAILY_SCHEDULER=true to create it."
+fi
 
-if [[ "${DBT_ENABLE_WEEKLY_SCHEDULER:-false}" == "true" ]]; then
+if [[ "${DBT_ENABLE_WEEKLY_SCHEDULER:-true}" == "true" ]]; then
   upsert_scheduler \
     "${DBT_WEEKLY_SCHEDULER_JOB_NAME:-dbt-runner-weekly}" \
     "${DBT_WEEKLY_SELECTOR:-weekly}" \
