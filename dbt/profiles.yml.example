@@ -1,0 +1,11 @@
+wingtra_dwh:
+  target: prod
+  outputs:
+    prod:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT', 'wingtra-dwh') }}"
+      dataset: "{{ env_var('DBT_DATASET', 'dbt') }}"
+      location: "{{ env_var('BQ_LOCATION', 'europe-west1') }}"
+      threads: "{{ env_var('DBT_THREADS', '4') | as_number }}"
+      timeout_seconds: "{{ env_var('DBT_TIMEOUT_SECONDS', '300') | as_number }}"

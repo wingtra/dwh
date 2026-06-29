@@ -1,0 +1,49 @@
+name: wingtra_dwh
+version: "1.0.0"
+config-version: 2
+
+profile: wingtra_dwh
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+target-path: target
+log-path: logs
+
+clean-targets:
+  - target
+  - dbt_packages
+  - logs
+
+models:
+  wingtra_dwh:
+    clean:
+      +materialized: view
+      +schema: cl
+      odoo:
+        +schema: cl_odoo
+      revolut:
+        +schema: cl_revolut
+      external:
+        +schema: cl_external
+      seeds:
+        +schema: cl_seeds
+    object:
+      +materialized: table
+      +schema: ol
+      ops:
+        +schema: ol_ops
+      finance:
+        +schema: ol_finance
+    business:
+      +materialized: table
+      +schema: bl
+      ops:
+        +schema: bl_ops
+      finance:
+        +schema: bl_finance
+    metadata:
+      +materialized: view
+      +schema: meta

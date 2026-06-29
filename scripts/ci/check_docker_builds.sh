@@ -21,3 +21,11 @@ done
 if [[ ${build_count} -eq 0 ]]; then
   echo "No source Dockerfiles found."
 fi
+
+if [[ -f dbt/Dockerfile ]]; then
+  echo "Building dwh-dbt:ci from dbt"
+  docker build \
+    --file dbt/Dockerfile \
+    --tag dwh-dbt:ci \
+    dbt
+fi

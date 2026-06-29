@@ -14,7 +14,7 @@ dbt/               # warehouse transformations across landed sources
 ```
 
 Source pipelines own extraction, runtime, deployment, secrets, and runbooks.
-The dbt project owns cross-source modeling, tests, and business-facing marts.
+The dbt project owns CL, OL, BL, tests, and business-facing warehouse outputs.
 
 ## Current Sources
 
