@@ -7,6 +7,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . /app/dbt/
-RUN chmod +x /app/dbt/docker/entrypoint.sh
+RUN cp /app/dbt/profiles.yml.example /app/dbt/profiles.yml \
+  && grep -q '^wingtra_dwh:' /app/dbt/profiles.yml \
+  && chmod +x /app/dbt/docker/entrypoint.sh
 
 ENTRYPOINT ["/app/dbt/docker/entrypoint.sh"]
