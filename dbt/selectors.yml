@@ -1,0 +1,27 @@
+selectors:
+  - name: daily
+    description: Models that should run on every scheduled dbt build.
+    definition:
+      method: tag
+      value: daily
+
+  - name: weekly
+    description: Models that should run on the weekly scheduled dbt build.
+    definition:
+      method: tag
+      value: weekly
+
+  - name: scheduled
+    description: All models intended for scheduled production dbt builds.
+    definition:
+      union:
+        - method: tag
+          value: daily
+        - method: tag
+          value: weekly
+
+  - name: finance
+    description: Finance-domain models.
+    definition:
+      method: tag
+      value: finance
