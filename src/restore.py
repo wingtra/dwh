@@ -27,7 +27,18 @@ def restore(local_dump_path: str) -> None:
     log.info("Restoring (filtered) from %s into %s", local_dump_path, PG_DATABASE)
 
     psql = subprocess.Popen(
-        ["psql", "-h", PG_SOCKET_DIR, "-U", PG_USER, "-d", PG_DATABASE, "--quiet"],
+        [
+            "psql",
+            "-h",
+            PG_SOCKET_DIR,
+            "-U",
+            PG_USER,
+            "-d",
+            PG_DATABASE,
+            "--quiet",
+            "-v",
+            "ON_ERROR_STOP=1",
+        ],
         stdin=subprocess.PIPE, text=True,
     )
 

@@ -6,6 +6,10 @@ source "${SCRIPT_DIR}/config.env"
 
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/odoo-pipeline/runner:latest"
 SA="odoo-pipeline@${PROJECT}.iam.gserviceaccount.com"
+ODOO_CLOUD_RUN_JOB_NAME="${ODOO_CLOUD_RUN_JOB_NAME:-odoo-to-bq}"
+ODOO_BQ_DATASET="${ODOO_BQ_DATASET:-dl_odoo}"
+ODOO_BQ_STAGING_DATASET="${ODOO_BQ_STAGING_DATASET:-dl_odoo_staging}"
+ODOO_BQ_LOCATION="${ODOO_BQ_LOCATION:-${REGION}}"
 
 echo "=== Phase 3: Build & Deploy ==="
 echo "Project: ${PROJECT}"
@@ -23,7 +27,7 @@ gcloud builds submit \
 
 # 2. Deploy Cloud Run Job
 echo "--- Deploying Cloud Run Job ---"
-gcloud run jobs deploy odoo-to-bq \
+gcloud run jobs deploy "${ODOO_CLOUD_RUN_JOB_NAME}" \
   --project="${PROJECT}" \
   --image="${IMAGE}" \
   --region="${REGION}" \
@@ -33,7 +37,9 @@ GCP_PROJECT=${PROJECT},\
 GCS_BUCKET=${PROJECT}-odoo-backups,\
 ODOO_SSH_HOST=${ODOO_SSH_HOST},\
 ODOO_SSH_USER=${ODOO_SSH_USER},\
-BQ_DATASET=dl_odoo,\
+BQ_DATASET=${ODOO_BQ_DATASET},\
+BQ_STAGING_DATASET=${ODOO_BQ_STAGING_DATASET},\
+BQ_LOCATION=${ODOO_BQ_LOCATION},\
 PG_DATABASE=odoo_restore,\
 PG_USER=postgres" \
   --task-timeout=3600 \
@@ -45,5 +51,5 @@ echo ""
 echo "=== Phase 3 Complete ==="
 echo ""
 echo "Verification:"
-echo "  gcloud run jobs describe odoo-to-bq --region=${REGION} --project=${PROJECT}"
-echo "  gcloud run jobs execute odoo-to-bq --region=${REGION} --project=${PROJECT} --wait"
+echo "  gcloud run jobs describe ${ODOO_CLOUD_RUN_JOB_NAME} --region=${REGION} --project=${PROJECT}"
+echo "  gcloud run jobs execute ${ODOO_CLOUD_RUN_JOB_NAME} --region=${REGION} --project=${PROJECT} --wait"

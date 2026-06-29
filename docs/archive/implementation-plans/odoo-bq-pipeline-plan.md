@@ -1,5 +1,8 @@
 # Odoo.sh → BigQuery Pipeline — Full Implementation Handover
 
+> Archived initial implementation handover. This is not current operational guidance.
+> See [pipeline-overview.md](../../pipeline-overview.md) for the current Odoo pipeline behavior.
+
 > **For Claude Code.** This is the master document. Work through the phases in order. Each phase has a verification gate at the end — stop, run the checks, confirm with the user before proceeding to the next phase. Do not skip ahead.
 
 ## 1. Goal
