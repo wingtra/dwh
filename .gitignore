@@ -56,6 +56,8 @@ credentials/
 secrets/
 infra/config.env
 infra/*.env
+**/infra/config.env
+**/infra/*.env
 
 # SSH keys
 *.pem
@@ -63,9 +65,12 @@ infra/*.env
 *.pub
 infra/odoo_sh_id_ed25519
 infra/odoo_sh_id_ed25519.pub
+**/infra/odoo_sh_id_ed25519
+**/infra/odoo_sh_id_ed25519.pub
 
 # dlt secrets
 .dlt/secrets.toml
+**/.dlt/secrets.toml
 
 # MCP server config (contains API keys)
 .mcp.json
