@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 from datetime import datetime, timezone
 
+from google.api_core.exceptions import PreconditionFailed
 from google.cloud import secretmanager, storage
 
 
@@ -98,9 +99,12 @@ def fetch() -> str:
         # Step 4: Upload to GCS archive
         date_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         gcs_key = f"odoo/{date_prefix}/{filename}"
-        storage.Client().bucket(bucket_name).blob(gcs_key).upload_from_filename(
-            local_path)
-        log.info("Uploaded to gs://%s/%s", bucket_name, gcs_key)
+        blob = storage.Client().bucket(bucket_name).blob(gcs_key)
+        try:
+            blob.upload_from_filename(local_path, if_generation_match=0)
+            log.info("Uploaded to gs://%s/%s", bucket_name, gcs_key)
+        except PreconditionFailed:
+            log.info("Backup already archived at gs://%s/%s", bucket_name, gcs_key)
 
         return local_path
 

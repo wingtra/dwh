@@ -14,7 +14,7 @@ A daily automated pipeline that extracts data from Wingtra's Odoo.sh production 
                         └──────────┬───────────┘
                                    │
                           1. SSH + SCP (-O flag)
-                             Daily at 04:00 UTC
+                             Daily at 18:30 UTC
                                    │
                                    ▼
 ┌──────────────────────────────────────────────────────────────────┐
@@ -28,8 +28,8 @@ A daily automated pipeline that extracts data from Wingtra's Odoo.sh production 
 │  │  SSH key   │    │  Decompress  │    │  Read all tables  │    │
 │  │  from      │    │  .sql.gz     │    │  from local PG    │    │
 │  │  Secret    │    │              │    │                   │    │
-│  │  Manager   │    │  Stream thru │    │  Write to BQ      │    │
-│  │            │    │  dump filter │    │  (full replace)   │    │
+│  │  Manager   │    │  Stream thru │    │  Write staging    │    │
+│  │            │    │  dump filter │    │  then MERGE DL    │    │
 │  │  Download  │    │  (skip mail, │    │                   │    │
 │  │  backup    │    │  attachments,│    │  275 tables       │    │
 │  │  via SCP   │    │  IR tables)  │    │  3.1M rows        │    │
@@ -53,7 +53,7 @@ A daily automated pipeline that extracts data from Wingtra's Odoo.sh production 
   │ wingtra-dwh-  │                     │ Dataset: dl_odoo │
   │ odoo-backups  │                     │                  │
   │               │                     │ 275 tables       │
-  │ 30-day        │                     │ Full replace     │
+  │ 30-day        │                     │ Upsert promotion │
   │ retention     │                     │ daily            │
   └───────────────┘                     └──────────────────┘
 ```
@@ -61,7 +61,7 @@ A daily automated pipeline that extracts data from Wingtra's Odoo.sh production 
 ## Step-by-step flow
 
 ### 1. Trigger (Cloud Scheduler)
-- Cron fires daily at 04:00 UTC
+- Cron fires daily at 18:30 UTC
 - Sends authenticated HTTP POST to Cloud Run
 - Cloud Run spins up the container
 
@@ -76,10 +76,10 @@ A daily automated pipeline that extracts data from Wingtra's Odoo.sh production 
 ### 3. Filtered restore (`restore.py` + `dump_filter.py`)
 - Starts **ephemeral Postgres 16** inside the container
 - Decompresses the `.sql.gz` and streams it through the **dump filter**
-- The filter skips COPY blocks for excluded tables:
+- The filter skips COPY blocks for excluded tables and drops selected heavy columns:
   - `mail_*` (chatter, 1M+ rows of messages/tracking)
   - `ir_attachment` (binary blobs, 55 MB)
-  - `quality_check/alert/point` (3 GB of TOAST bloat)
+  - TOAST-heavy quality columns with embedded HTML/images
   - `ir_*` (technical metadata, UI views, translations)
   - `bus_*`, `discuss_*`, `digest_*` (real-time/notification noise)
   - ~107 tables skipped total
@@ -89,8 +89,8 @@ A daily automated pipeline that extracts data from Wingtra's Odoo.sh production 
 ### 4. Load to BigQuery (`pipeline.py`)
 - **dlt** connects to local Postgres via Unix socket
 - Auto-discovers all tables in the `public` schema
-- Extracts, normalizes, and loads to BigQuery dataset `dl_odoo`
-- `write_disposition="replace"` - every run is a complete snapshot
+- Extracts, normalizes, and loads a complete snapshot into BigQuery dataset `dl_odoo_staging`
+- Promotes staging tables into `dl_odoo` with BigQuery `MERGE`: upsert changed/new rows, clear `_dlt_deleted_at` for rows that reappear, and set `_dlt_deleted_at` for rows absent from the staged snapshot
 - Postgres `numeric` without precision mapped to `Float` via `type_adapter_callback`
 - Writes run metadata to `_pipeline_runs` table (status, duration, errors)
 
@@ -104,7 +104,7 @@ A daily automated pipeline that extracts data from Wingtra's Odoo.sh production 
 |---|---|---|
 | Attachments | `ir_attachment` | Binary blobs, 55 MB, not useful for analytics |
 | Mail/Chatter | `mail_message`, `mail_followers`, `mail_tracking_value` | 1M+ rows of notification noise |
-| Quality TOAST | `quality_check`, `quality_alert`, `quality_point` | 3 GB of embedded HTML/images in TOAST columns |
+| Quality TOAST columns | Selected columns on `quality_check`, `quality_alert`, `quality_point` | Embedded HTML/images that caused TOAST bloat; table row metadata remains included |
 | IR Technical | `ir_model_*`, `ir_ui_*`, `ir_act_*`, `ir_translation` | Odoo internals, UI definitions, translations |
 | Real-time | `bus_bus`, `bus_presence`, `discuss_*` | Ephemeral messaging state |
 | Wizards | `base_import_*`, `change_password_*`, `*_wizard*` | Transient UI state |
@@ -131,12 +131,13 @@ Everything not in the EXCLUDE list. Key business tables:
 | Resource | Name | Purpose |
 |---|---|---|
 | Cloud Run Job | `odoo-to-bq` | Runs the pipeline (16 GiB, 4 vCPU) |
-| Cloud Scheduler | `odoo-pipeline-daily` | Triggers daily at 04:00 UTC |
+| Cloud Scheduler | `odoo-to-bq-daily` | Triggers daily at 18:30 UTC |
 | GCS Bucket | `wingtra-dwh-odoo-backups` | Backup archive (30-day retention) |
 | BigQuery Dataset | `dl_odoo` | Target dataset (europe-west1) |
+| BigQuery Dataset | `dl_odoo_staging` | Staging dataset used before upsert promotion |
 | Artifact Registry | `odoo-pipeline` | Docker image storage |
 | Secret Manager | `odoo-sh-ssh-key` | SSH private key for Odoo.sh |
-| Service Account | `odoo-pipeline@wingtra-dwh` | Pipeline identity (5 IAM roles) |
+| Service Account | `odoo-pipeline@wingtra-dwh` | Pipeline identity with scoped BigQuery, Storage, Secret Manager, and Run permissions |
 
 ## Costs
 
@@ -155,6 +156,15 @@ gcloud run jobs execute odoo-to-bq --region=europe-west1 --project=wingtra-dwh
 ```sql
 SELECT * FROM `wingtra-dwh.dl_odoo._pipeline_runs`
 ORDER BY started_at DESC LIMIT 5
+```
+
+**Find rows no longer present in the latest Odoo snapshot:**
+```sql
+SELECT *
+FROM `wingtra-dwh.dl_odoo.stock_move`
+WHERE _dlt_deleted_at IS NOT NULL
+ORDER BY _dlt_deleted_at DESC
+LIMIT 20
 ```
 
 **View logs:**

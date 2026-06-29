@@ -13,9 +13,23 @@ COPY_START = re.compile(r'^COPY\s+(?:public\.)?"?([A-Za-z_][A-Za-z0-9_]*)"?\s*\(
 def filter_stream(stdin, stdout, exclude: set[str]) -> dict[str, int]:
     """Returns counts: rows skipped per table."""
     skipping_table = None
+    buffered_statement: list[str] = []
     skipped_counts: dict[str, int] = {}
 
     for line in stdin:
+        if buffered_statement:
+            buffered_statement.append(line)
+            if line.rstrip().endswith(";"):
+                statement = "".join(buffered_statement)
+                if "FOREIGN KEY" in statement:
+                    skipped_counts["_foreign_key_constraints"] = (
+                        skipped_counts.get("_foreign_key_constraints", 0) + 1
+                    )
+                else:
+                    stdout.write(statement)
+                buffered_statement = []
+            continue
+
         if skipping_table is not None:
             if line.rstrip() == r"\.":
                 skipping_table = None
@@ -26,6 +40,19 @@ def filter_stream(stdin, stdout, exclude: set[str]) -> dict[str, int]:
         m = COPY_START.match(line)
         if m and m.group(1) in exclude:
             skipping_table = m.group(1)
+            continue
+
+        if line.startswith("ALTER TABLE"):
+            buffered_statement = [line]
+            if line.rstrip().endswith(";"):
+                statement = "".join(buffered_statement)
+                if "FOREIGN KEY" in statement:
+                    skipped_counts["_foreign_key_constraints"] = (
+                        skipped_counts.get("_foreign_key_constraints", 0) + 1
+                    )
+                else:
+                    stdout.write(statement)
+                buffered_statement = []
             continue
 
         stdout.write(line)

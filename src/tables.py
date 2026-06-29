@@ -11,12 +11,11 @@ never enter Postgres and cost zero time/storage.
 EXCLUDE_TABLES: set[str] = {
     # Attachments (binary blobs, largest single table)
     "ir_attachment",
-    # Quality tables with massive TOAST bloat (3+ GB of embedded HTML/images).
-    # Row data is tiny (~1 MB) but TOAST columns cause OOM during extract.
-    # TODO: re-add with column-selective extract that skips TOAST columns.
-    "quality_check",
-    "quality_alert",
-    "quality_point",
+    # quality_check / quality_alert / quality_point are now INCLUDED.
+    # Their TOAST-heavy columns (HTML/BINARY/TEXT) are dropped at the dlt
+    # source level via TABLE_DROP_COLUMNS in src/pipeline.py. The remaining
+    # metadata columns (FKs, dates, statuses, names) are what the KPI work
+    # needs and they fit comfortably in memory.
     # Mail / chatter
     "mail_message",
     "mail_tracking_value",
