@@ -1,0 +1,759 @@
+version: 2
+
+models:
+  - name: stock_quant
+    description: Cleaned Odoo stock quant records. One row per quant.
+    columns:
+      - name: stock_quant_id
+        tests: [not_null, unique]
+
+  - name: stock_location
+    description: Cleaned Odoo stock locations, including active and inactive records.
+    columns:
+      - name: location_id
+        tests: [not_null, unique]
+      - name: location_usage
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['internal', 'transit', 'supplier', 'customer', 'inventory', 'production', 'view']
+
+  - name: stock_move
+    description: Cleaned Odoo stock moves. One row per planned or executed inventory movement (purchase receipts, deliveries, MO consumption/production, scraps, internal transfers).
+    columns:
+      - name: stock_move_id
+        tests: [not_null, unique]
+      - name: move_state
+        description: Move lifecycle state. Typical values include draft, waiting, confirmed, partially_available, assigned, done, cancel.
+      - name: purchase_line_id
+        description: FK to purchase_order_line when the move originates from a PO receipt.
+      - name: scrap_id
+        description: FK to stock_scrap when the move is the scrap-out leg.
+
+  - name: product_product
+    description: |
+      Cleaned Odoo product variants. One row per SKU. Wingtra carries exactly one variant per product_template (1-1, verified), so variant-level and template-level queries are interchangeable.
+      No company filter is applied here: `product_product` has no `company_id` column, and CEE scoping lives on `product_template`. The OL product object joins template+variant, so CEE rows drop out downstream without filtering at this layer.
+      Note on costing: `product_category.property_cost_method` is "average" for every active category at company 1, so `standard_price_*` columns hold the **moving-average cost**, not a true standard cost. The field name is an Odoo legacy.
+    columns:
+      - name: product_id
+        description: Variant primary key (Odoo `product_product.id`).
+        tests: [not_null, unique]
+      - name: product_template_id
+        description: FK to product_template (the product master that owns the BOM, supplier info, category, name, etc.).
+      - name: created_by_user_id
+        description: FK to res_users. Odoo `create_uid`.
+      - name: updated_by_user_id
+        description: FK to res_users. Odoo `write_uid`.
+      - name: intrastat_code_id
+        description: FK to the customs commodity-code dimension. Only populated for products that move across EU borders for Intrastat reporting.
+        config:
+          meta:
+            status: stale
+            status_reason: Sparse (271/2,703). Use `product_template.hs_code_id` instead for customs classification.
+      - name: intrastat_origin_country_id
+        description: FK to res_country. Declared country of origin for Intrastat. Sparse.
+        config:
+          meta:
+            status: stale
+            status_reason: Sparse (549/2,703). Use template-level origin fields instead.
+      - name: created_at
+        description: Variant creation timestamp (Odoo `create_date`).
+      - name: updated_at
+        description: Variant last-write timestamp (Odoo `write_date`).
+      - name: product_code
+        description: Human-readable SKU code. Rename of Odoo `default_code`. This is what users call the "Internal Reference" in the Odoo UI and what most sheets use to match products across systems.
+      - name: is_active
+        description: Active flag. Inactive variants are archived in Odoo (hidden from default list views) but kept for historical references.
+      - name: barcode
+        description: Optional barcode. Unused in Wingtra's workflow as of 2026-05.
+      - name: combination_indices
+        description: Odoo-internal hash of the variant's attribute-value combination. Not for downstream consumption.
+        config:
+          meta:
+            status: stale
+            status_reason: Effectively empty (2/2,703). Wingtra runs 1 variant per template so attribute combinations don't apply.
+      - name: can_variant_image_be_zoomed
+        description: UI-only flag from Odoo `can_image_variant_1024_be_zoomed`. Not business-relevant.
+      - name: lot_properties_definition_raw
+        description: Raw JSON definition of per-lot custom properties. Sparse; safe to ignore unless modelling lot tracking.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/2,703). Per-lot tracking disabled at Wingtra.
+      - name: standard_price_raw
+        description: |
+          Raw Odoo cost JSON, keyed by company id (`{"1": <AG cost>, "8": <CEE cost>}`).
+          Under average costing this holds the moving-average cost as recomputed on each receipt — historical valuations using today's value will NOT match true point-in-time cost. For as-of-date valuation, use `stock_valuation_layer` instead.
+      - name: standard_price_ag
+        description: Per-unit moving-average cost in CHF for company_id=1 (Wingtra AG). Extracted from `standard_price_raw."1"`.
+      - name: volume
+        description: Declared product volume. Unit is the system volume UoM (typically m³). Sparse.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated on variants (0/2,703). Volume is maintained at template level.
+      - name: weight
+        description: Declared product weight. Unit is the system weight UoM (typically kg). Sparse.
+        config:
+          meta:
+            status: stale
+            status_reason: Sparse (80/2,703); not a reliable shipping-weight source. Use template-level `weight` instead.
+      - name: intrastat_supplementary_unit_amount
+        description: Intrastat supplementary unit quantity per item, used when the customs code requires a non-weight measure. Sparse.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/2,703).
+
+  - name: product_template
+    description: |
+      Cleaned Odoo product templates. One row per product master record (the parent of variants in `product_product`). Wingtra carries one variant per template (1-1), so for most queries you can think of a template as a SKU.
+      CEE (`company_id = 8`) rows are filtered out at this layer per project policy. Multi-company shared templates (`company_id IS NULL`) and the single Corp template (`company_id = 9`, the "Discount" service stub) are kept.
+      Translatable text fields (name, description, picking descriptions) are kept both as raw JSON (`*_raw`) and as the `en_GB` extraction. Per-company JSON properties (responsible user, accounts, valuation, cost components) are kept as `*_property_raw` JSON; downstream layers extract the company-1 (AG) value as needed.
+    columns:
+      - name: product_template_id
+        description: Primary key (Odoo `product_template.id`).
+        tests: [not_null, unique]
+      - name: product_category_id
+        description: FK to product_category. Defines the product's place in the category hierarchy and inherits accounting/valuation properties.
+      - name: uom_id
+        description: FK to uom_uom. Default unit of measure for stock and sales.
+      - name: purchase_uom_id
+        description: FK to uom_uom for purchasing. May differ from `uom_id` when vendors sell in different units than internal use.
+      - name: company_id
+        description: Owning company. NULL means the template is shared multi-company. Values seen here are 1 (AG) and 9 (Corp). CEE (8) is filtered out.
+      - name: created_by_user_id
+        description: FK to res_users. Odoo `create_uid`.
+      - name: updated_by_user_id
+        description: FK to res_users. Odoo `write_uid`.
+      - name: origin_country_id
+        description: FK to res_country. Declared country of origin for customs paperwork. Sparse.
+      - name: expert_id
+        description: FK to res_users. Engineering expert / owner for the product. Wingtra-specific role.
+      - name: scm_id
+        description: FK to res_users. SCM (supply-chain management) responsible owner. Wingtra-specific role used for OH-inventory ownership.
+      - name: country_of_origin
+        description: ISO country code string for origin. Independent of `origin_country_id`. Sparse.
+        config:
+          meta:
+            status: stale
+            status_reason: Sparse (13/2,703). Use `origin_country_id` FK instead (1,106 populated).
+      - name: created_at
+        description: Template creation timestamp (Odoo `create_date`).
+      - name: updated_at
+        description: Template last-write timestamp (Odoo `write_date`).
+      - name: expected_eol
+        description: Expected end-of-life date for the product. Wingtra-specific planning input. Sparse.
+        config:
+          meta:
+            status: stale
+            status_reason: Abandoned. Last write 2023-04, only 1 currently-active row. Team tracks phase-out in IMM PIPO column. See docs/process-improvements.md.
+      - name: product_name_raw
+        description: Raw Odoo translatable name JSON. Use `product_name` for normal queries.
+      - name: product_name
+        description: English product name extracted from `product_name_raw`, with `en_GB` preferred and an automatic fallback to `en_US` when only the US locale is populated. This is the display name downstream models should use.
+      - name: product_name_en_us
+        description: Strict en_US extraction from `product_name_raw`. Use only when you specifically need the US-locale string; otherwise use `product_name` which already handles the fallback.
+      - name: sequence
+        description: Odoo sort sequence integer. Lower comes first in default UI orderings.
+      - name: description_raw
+        description: Raw Odoo translatable description JSON.
+      - name: description
+        description: en_GB description extracted from `description_raw`. Free-text human description shown on the product form.
+      - name: purchase_description_raw
+        description: Raw Odoo translatable purchase-description JSON, shown on RFQs/POs.
+        config:
+          meta:
+            status: stale
+            status_reason: Purchase description rarely set (41/2,703).
+      - name: purchase_description
+        description: en_GB purchase description.
+        config:
+          meta:
+            status: stale
+            status_reason: Purchase description rarely set (41/2,703).
+      - name: sale_description_raw
+        description: Raw Odoo translatable sale-description JSON, shown on quotations/SOs.
+        config:
+          meta:
+            status: stale
+            status_reason: Sale description rarely set (36/2,703).
+      - name: sale_description
+        description: en_GB sale description.
+        config:
+          meta:
+            status: stale
+            status_reason: Sale description rarely set (36/2,703).
+      - name: product_type
+        description: Odoo product type enum. In Odoo 18 collapses to `consu` (Goods) or `service`. Storable-vs-consumable is held separately in `is_storable`.
+      - name: is_saleable
+        description: Odoo `sale_ok`. When TRUE the product can appear on sales orders.
+      - name: is_purchasable
+        description: Odoo `purchase_ok`. When TRUE the product can appear on purchase orders.
+      - name: is_active
+        description: Active flag. FALSE means archived (hidden from default views but kept for historical references).
+      - name: color
+        description: Kanban-card colour index used in the Odoo UI. Not business-relevant.
+      - name: product_code
+        description: Human-readable SKU code. Rename of Odoo `default_code`. This is the "Internal Reference" in the UI and the join key used by most sheets and exports.
+      - name: can_image_be_zoomed
+        description: UI-only flag from Odoo `can_image_1024_be_zoomed`. Not business-relevant.
+      - name: has_configurable_attributes
+        description: TRUE when the product has variant-defining attributes. Wingtra runs 1 variant per template, so this is effectively always FALSE.
+      - name: service_type
+        description: Odoo enum for services (manual, milestones, timesheet, etc.). Relevant only when `product_type = 'service'`.
+      - name: sale_line_warn
+        description: Warning level Odoo shows when this product is added to an SO line (`no-message`, `warning`, `block`).
+      - name: sale_line_warn_msg
+        description: Free-text warning message shown on SO lines when `sale_line_warn` triggers.
+        config:
+          meta:
+            status: stale
+            status_reason: SO-line warning message rarely customised (14/2,703).
+      - name: expense_policy
+        description: How expensed services bill back to customers (`no`, `cost`, `sales_price`).
+      - name: invoice_policy
+        description: When to invoice for services (`order`, `delivery`).
+      - name: tracking
+        description: Stock tracking mode (`none`, `lot`, `serial`).
+      - name: picking_description_raw
+        description: Raw translatable JSON description shown on stock pickings.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/2,703).
+      - name: picking_description
+        description: en_GB picking description.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/2,703).
+      - name: picking_out_description_raw
+        description: Raw translatable JSON description shown on outgoing pickings (deliveries).
+        config:
+          meta:
+            status: stale
+            status_reason: Effectively never set (1/2,703).
+      - name: picking_out_description
+        description: en_GB outgoing picking description.
+        config:
+          meta:
+            status: stale
+            status_reason: Effectively never set (1/2,703).
+      - name: picking_in_description_raw
+        description: Raw translatable JSON description shown on incoming pickings (receipts).
+        config:
+          meta:
+            status: stale
+            status_reason: Effectively never set (5/2,703).
+      - name: picking_in_description
+        description: en_GB incoming picking description.
+        config:
+          meta:
+            status: stale
+            status_reason: Effectively never set (5/2,703).
+      - name: hs_code
+        description: HS commodity code as plain string on the template. Customs classification.
+      - name: product_state
+        description: Lifecycle state from Odoo `state` (`draft`, `production`, `obsolete`, etc.). Wingtra uses this to track engineering status.
+      - name: storage_method
+        description: Odoo `storage` setting (storage strategy for the product). Sparse.
+      - name: purchase_method
+        description: Whether quantities on vendor bills come from ordered or received qty (`purchase`, `receive`).
+      - name: purchase_line_warn
+        description: Warning level on PO lines.
+      - name: purchase_line_warn_msg
+        description: Free-text warning message shown on PO lines.
+      - name: has_revision
+        description: Wingtra `with_revision` flag. TRUE when the product is under engineering revision control.
+      - name: has_pending_modification
+        description: Wingtra `pending_modification` flag. TRUE when an engineering change is queued.
+      - name: product_url
+        description: External URL for the product (datasheet / PDM link).
+      - name: new_internal_code
+        description: Replacement SKU code planned for the product. Wingtra-specific renumbering field.
+        config:
+          meta:
+            status: unused
+            status_reason: SKU-renumbering field never used (0/2,703).
+      - name: is_landed_cost_enabled
+        description: Odoo `landed_cost_ok`. When TRUE, landed costs can be allocated to this product.
+      - name: split_method_landed_cost
+        description: Allocation method for landed costs (`equal`, `by_quantity`, `by_current_cost_price`, `by_weight`, `by_volume`).
+        config:
+          meta:
+            status: unused
+            status_reason: Landed-cost split method never configured (0/2,703).
+      - name: commercial_invoice_description
+        description: Free-text description used on commercial invoices for shipping/customs.
+      - name: is_wp_master
+        description: Wingtra `wp_master` flag. Marks a product as a master/parent record in the WP (work package) hierarchy.
+      - name: allows_negative_stock
+        description: Template-level override for `allow_negative_stock`. When TRUE, this product may go below zero on-hand even if category disallows.
+      - name: x_studio_eccn_number
+        description: ECCN export-control classification number. Wingtra studio custom field used for trade-compliance.
+      - name: x_studio_storage_box
+        description: Free-text storage location/box label. Wingtra studio custom field for warehouse organisation.
+        config:
+          meta:
+            status: stale
+            status_reason: Free-text storage-box annotation sparsely used (104/2,703).
+      - name: uses_internal_logistic_batch
+        description: Wingtra flag. TRUE when the product is grouped into internal logistic batches for handling.
+      - name: uses_internal_logistic_batch_after_manufacturing
+        description: Wingtra flag. TRUE when the post-MO batch grouping rule applies.
+      - name: is_studio_sellable_product
+        description: Wingtra studio custom flag tagging sellable end products.
+        config:
+          meta:
+            status: stale
+            status_reason: Studio custom flag rarely set (125/2,703).
+      - name: is_studio_procurable_product
+        description: Wingtra studio custom flag tagging procurable inputs.
+      - name: is_studio_procurable_product_duplicate
+        description: Legacy duplicate of `is_studio_procurable_product`. Should be deprecated; check before relying on it.
+        config:
+          meta:
+            status: stale
+            status_reason: Legacy duplicate of `is_studio_procurable_product`. Do not consume.
+      - name: is_lithium_batteries
+        description: Wingtra flag. TRUE for products containing lithium cells (drives shipping declarations and ECCN handling).
+      - name: battery_type
+        description: Battery chemistry / type label. Sparse, only populated for battery products.
+      - name: should_add_product_to_commercial_invoice
+        description: When TRUE the product is included on the commercial-invoice export by default.
+      - name: part_number
+        description: PDM part number (separate from `product_code`). Wingtra engineering identifier that survives SKU code changes.
+      - name: pdm_link_model
+        description: PDM model link / reference. Wingtra studio field.
+      - name: pdm_link_drawing
+        description: PDM drawing link / reference. Wingtra studio field.
+      - name: pdm_status
+        description: PDM lifecycle status (e.g. released / draft). Wingtra studio field.
+      - name: pdm_attachment
+        description: PDM attachment reference / file URL. Wingtra studio field.
+      - name: pcba_revision
+        description: PCBA (printed-circuit-board assembly) revision tag for electronic products. Sparse.
+        config:
+          meta:
+            status: stale
+            status_reason: Sparse (9/2,703). Engineering keeps the canonical source in PDM.
+      - name: x_studio_char_field_a_gus3
+        description: Wingtra studio custom char field. Purpose not documented in the Odoo metadata; check with engineering before using.
+        config:
+          meta:
+            status: unused
+            status_reason: Wingtra studio custom field, never written to (0/2,703).
+      - name: specification_raw
+        description: Raw JSON technical specification blob.
+      - name: definition_raw
+        description: Raw JSON product definition blob (Wingtra studio field).
+        config:
+          meta:
+            status: stale
+            status_reason: Wingtra studio field, abandoned (62/2,703).
+      - name: reason_raw
+        description: Raw JSON reason / change rationale. Wingtra studio field, sparse.
+      - name: product_properties_raw
+        description: Raw JSON of per-product custom properties as defined by the category's `product_properties_definition`.
+        config:
+          meta:
+            status: stale
+            status_reason: Per-product custom properties barely used (29/2,703).
+      - name: should_create_repair
+        description: When TRUE, repair orders are auto-created for this product on receipt of returns.
+        config:
+          meta:
+            status: stale
+            status_reason: Repair-on-receipt feature not in active use (23/2,703).
+      - name: last_direct_labour_raw
+        description: Raw JSON per-company snapshot of the previous direct-labour cost component.
+        config:
+          meta:
+            status: stale
+            status_reason: Direct-labour snapshot rarely set (94/2,703).
+      - name: responsible_property_raw
+        description: Raw JSON of per-company responsible user id. Extract with `JSON_VALUE(..., '$."1"')` for the AG owner.
+      - name: internal_logistics_raw
+        description: Raw JSON per-company internal-logistics cost component used in landed/total cost.
+      - name: report_internal_logistics_raw
+        description: Raw JSON per-company computed/reported internal-logistics value.
+      - name: direct_labour_raw
+        description: Raw JSON per-company direct-labour cost component.
+        config:
+          meta:
+            status: stale
+            status_reason: Direct-labour component rarely set (104/2,703).
+      - name: last_indirect_production_raw
+        description: Raw JSON per-company snapshot of the previous indirect-production cost component.
+      - name: last_internal_logistics_raw
+        description: Raw JSON per-company snapshot of the previous internal-logistics cost component.
+      - name: last_type_specific_tooling_ext_raw
+        description: Raw JSON per-company snapshot of the previous external type-specific tooling cost.
+        config:
+          meta:
+            status: stale
+            status_reason: External tooling cost snapshot effectively abandoned (6/2,703).
+      - name: report_landing_cost_raw
+        description: Raw JSON per-company computed/reported landing cost.
+      - name: stock_production_property_raw
+        description: Raw JSON per-company production-virtual-location property used by Odoo manufacturing.
+        config:
+          meta:
+            status: unused
+            status_reason: Per-company production-location override never set (0/2,703).
+      - name: landing_cost_raw
+        description: Raw JSON per-company landing-cost component (customs, freight, brokerage).
+      - name: type_specific_tooling_ext_raw
+        description: Raw JSON per-company external type-specific tooling cost component.
+        config:
+          meta:
+            status: stale
+            status_reason: External tooling cost component effectively abandoned (6/2,703).
+      - name: last_landing_cost_raw
+        description: Raw JSON per-company snapshot of the previous landing cost.
+      - name: hs_code_property_raw
+        description: Raw JSON per-company HS commodity-code id. Overrides the category-level setting.
+      - name: service_to_purchase_raw
+        description: Raw JSON per-company flag controlling whether the service is purchased from a supplier.
+      - name: indirect_production_raw
+        description: Raw JSON per-company indirect-production cost component.
+      - name: stock_inventory_property_raw
+        description: Raw JSON per-company stock-inventory-adjustment location id.
+        config:
+          meta:
+            status: unused
+            status_reason: Per-company inventory-adjustment override never set (0/2,703).
+      - name: report_direct_labour_raw
+        description: Raw JSON per-company computed/reported direct labour value.
+        config:
+          meta:
+            status: stale
+            status_reason: Direct-labour reported value rarely set (124/2,703).
+      - name: report_type_specific_tooling_ext_raw
+        description: Raw JSON per-company computed/reported external type-specific tooling value.
+        config:
+          meta:
+            status: stale
+            status_reason: Reported tooling value, companion to abandoned cost component (20/2,703).
+      - name: report_indirect_production_raw
+        description: Raw JSON per-company computed/reported indirect-production value.
+      - name: is_favorite
+        description: User-facing favourite flag. Currently used as a manual "this product matters" annotation in Andrea's OH-Inventory workflow.
+      - name: service_tracking
+        description: Service-tracking mode (`no`, `task_global_project`, `task_in_project`, etc.). Relevant for `service` products only.
+      - name: account_income_property_raw
+        description: Raw JSON per-company income account id used on sales postings (overrides category default).
+        config:
+          meta:
+            status: unused
+            status_reason: Per-company income-account override never set (0/2,703).
+      - name: account_expense_property_raw
+        description: Raw JSON per-company expense account id used on purchase postings (overrides category default).
+        config:
+          meta:
+            status: unused
+            status_reason: Per-company expense-account override never set (0/2,703).
+      - name: is_storable
+        description: TRUE for storable products (the new Odoo 18 flag that replaces the old `type = 'product'`). FALSE for non-storable goods and services.
+      - name: is_lot_valuated
+        description: Odoo `lot_valuated`. TRUE when stock valuation is tracked per lot rather than per product. Wingtra disabled.
+      - name: account_creditor_price_difference_property_raw
+        description: Raw JSON per-company price-difference account id used on vendor-bill mismatches.
+        config:
+          meta:
+            status: unused
+            status_reason: Per-company creditor-price-difference override never set (0/2,703).
+      - name: type_specific_tooling_int_raw
+        description: Raw JSON per-company internal type-specific tooling cost component.
+        config:
+          meta:
+            status: unused
+            status_reason: Internal type-specific-tooling cost component never used (0/2,703).
+      - name: last_type_specific_tooling_int_raw
+        description: Raw JSON per-company snapshot of the previous internal type-specific tooling cost.
+        config:
+          meta:
+            status: unused
+            status_reason: Internal type-specific-tooling cost snapshot never used (0/2,703).
+      - name: report_type_specific_tooling_int_raw
+        description: Raw JSON per-company computed/reported internal type-specific tooling value.
+        config:
+          meta:
+            status: unused
+            status_reason: Internal type-specific-tooling reported value never used (0/2,703).
+      - name: it_cost_raw
+        description: Raw JSON per-company IT-cost component.
+        config:
+          meta:
+            status: unused
+            status_reason: IT-cost component never used (0/2,703).
+      - name: last_it_cost_raw
+        description: Raw JSON per-company snapshot of the previous IT-cost component.
+        config:
+          meta:
+            status: unused
+            status_reason: IT-cost snapshot never used (0/2,703).
+      - name: report_it_cost_raw
+        description: Raw JSON per-company computed/reported IT cost value.
+        config:
+          meta:
+            status: unused
+            status_reason: IT-cost reported value never used (0/2,703).
+      - name: machine_cost_raw
+        description: Raw JSON per-company machine-cost component.
+        config:
+          meta:
+            status: unused
+            status_reason: Machine-cost component never used (0/2,703).
+      - name: last_machine_cost_raw
+        description: Raw JSON per-company snapshot of the previous machine-cost component.
+        config:
+          meta:
+            status: unused
+            status_reason: Machine-cost snapshot never used (0/2,703).
+      - name: report_machine_cost_raw
+        description: Raw JSON per-company computed/reported machine cost value.
+        config:
+          meta:
+            status: unused
+            status_reason: Machine-cost reported value never used (0/2,703).
+      - name: list_price
+        description: Default sales list price in the company currency (CHF for AG). Customer-facing.
+      - name: volume
+        description: Declared product volume in the system volume UoM (typically m³). Sparse.
+      - name: weight
+        description: Declared product weight in the system weight UoM (typically kg). Sparse.
+      - name: sale_delay
+        description: Customer lead time in days quoted on sales orders.
+      - name: length
+        description: Physical length dimension. Unit is implementation-specific (likely m).
+      - name: width
+        description: Physical width dimension.
+      - name: height
+        description: Physical height dimension.
+      - name: net_weight
+        description: Net weight excluding packaging. Sparse.
+      - name: x_studio_monetary_field_wo_o25
+        description: Wingtra studio custom monetary field. Purpose not documented; check with finance before using.
+      - name: x_studio_foc_price
+        description: Wingtra studio free-of-charge price field used for samples / warranty.
+      - name: internal_logistic_batch_size
+        description: Batch size for internal logistics grouping (Wingtra-specific).
+      - name: internal_logistic_batch_size_after_manufacturing
+        description: Post-MO batch size for internal logistics grouping.
+
+  - name: product_category
+    description: |
+      Cleaned Odoo product category hierarchy. One row per category. Categories are shared across all Odoo companies (no `company_id` column on the source). Per-company accounting/valuation settings live in the `property_*` JSON columns, keyed by company id. After upstream CEE template filtering, categories that exist purely for CEE (e.g. `ALL / Expenses`, `ALL / Deliveries`) remain in this dimension but are orphaned (nothing references them).
+    columns:
+      - name: product_category_id
+        description: Primary key (Odoo `product_category.id`).
+        tests: [not_null, unique]
+      - name: parent_product_category_id
+        description: Self-FK to the parent category. NULL for top-level categories.
+      - name: created_by_user_id
+        description: FK to res_users. Odoo `create_uid`.
+      - name: updated_by_user_id
+        description: FK to res_users. Odoo `write_uid`.
+      - name: removal_strategy_id
+        description: FK to the stock removal strategy (FIFO / LIFO / FEFO / Closest Location). Sparse.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/60). No category overrides Odoo's default removal strategy.
+      - name: created_at
+        description: Category creation timestamp (Odoo `create_date`).
+      - name: updated_at
+        description: Category last-write timestamp (Odoo `write_date`).
+      - name: category_name
+        description: Leaf-level category name (Odoo `name`). Plain string.
+      - name: category_full_path
+        description: Full slash-separated category path (Odoo `complete_name`), e.g. `ALL / GEN2 / Manufacturable / Drones & spare parts`. Convenience for reporting.
+      - name: parent_path
+        description: Odoo materialised-path hierarchy string, e.g. `1/68/72/`. Useful for ancestor queries via `LIKE`.
+      - name: packaging_reserve_method
+        description: Strategy for reserving packaging stock. Odoo internal enum.
+      - name: allows_negative_stock
+        description: When TRUE, products in this category may go below zero on-hand. Audit / valuation flag.
+      - name: product_properties_definition_raw
+        description: Raw JSON schema defining custom per-product property fields available for products in this category. Sparse.
+        config:
+          meta:
+            status: stale
+            status_reason: Effectively empty (1/60). Per-category custom-property schema never set up at Wingtra.
+      - name: stock_valuation_account_property_raw
+        description: Raw JSON of per-company default valuation account ids, keyed by company id. Used for stock-value postings.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/60). Chart-of-Accounts defaults apply.
+      - name: stock_account_output_category_property_raw
+        description: Raw JSON of per-company stock-output account ids. Outbound stock postings on shipment.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/60).
+      - name: cost_method_property_raw
+        description: Raw JSON of per-company cost method (`average` / `standard` / `fifo`). All active AG categories are currently `average`.
+      - name: cost_method_ag
+        description: Extracted cost method for company_id=1 (Wingtra AG). Always `average` on current data.
+      - name: account_expense_category_property_raw
+        description: Raw JSON of per-company expense account ids used for product costing on sale.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/60).
+      - name: valuation_property_raw
+        description: Raw JSON of per-company valuation mode (`manual_periodic` or `real_time`). Drives whether Odoo posts stock moves to the GL automatically.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/60). Odoo defaults to `manual_periodic`.
+      - name: valuation_ag
+        description: Extracted valuation mode for company_id=1 (Wingtra AG).
+        config:
+          meta:
+            status: unused
+            status_reason: Always NULL because the underlying `valuation_property_raw` is never populated.
+      - name: account_income_category_property_raw
+        description: Raw JSON of per-company income account ids used on sales postings.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/60).
+      - name: stock_account_input_category_property_raw
+        description: Raw JSON of per-company stock-input account ids. Inbound stock postings on receipt.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/60).
+      - name: stock_journal_property_raw
+        description: Raw JSON of per-company stock journal ids used for valuation entries.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/60).
+      - name: stock_account_production_cost_property_raw
+        description: Raw JSON of per-company manufacturing-cost account ids. Used when a BOM is produced.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/60).
+      - name: account_creditor_price_difference_category_property_raw
+        description: Raw JSON of per-company price-difference account ids (PO vendor bill mismatch postings).
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/60).
+      - name: account_downpayment_category_property_raw
+        description: Raw JSON of per-company downpayment account ids used on sales prepayments.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/60).
+      - name: hs_code_property_raw
+        description: Raw JSON of per-company default HS commodity code for this category. Overridden at template level.
+        config:
+          meta:
+            status: unused
+            status_reason: Never populated (0/60). Use template-level `hs_code_id` instead.
+      - name: restricts_global_discount
+        description: When TRUE, the category-level setting prevents global sales discounts from applying to its products.
+        config:
+          meta:
+            status: unused
+            status_reason: Never set (0/60).
+
+  - name: product_supplierinfo
+    description: Cleaned Odoo product supplier info. One row per product/vendor combination; drives primary-supplier lookup, lead time, and MOQ.
+    columns:
+      - name: product_supplierinfo_id
+        tests: [not_null, unique]
+      - name: product_template_id
+        description: FK to product_template (product master). Most supplier records are scoped at the template level.
+      - name: partner_id
+        description: FK to res_partner. The vendor.
+      - name: lead_time_days
+        description: Vendor-promised lead time in days (Odoo delay column).
+
+  - name: purchase_order
+    description: |
+      Cleaned Odoo purchase order headers (covers both RFQ-stage drafts and confirmed POs).
+    columns:
+      - name: purchase_order_id
+        tests: [not_null, unique]
+      - name: purchase_order_state
+        description: PO state. Typical values include draft, sent, to approve, purchase, done, cancel.
+      - name: vendor_partner_id
+        description: FK to res_partner. The supplier on the PO.
+
+  - name: purchase_order_line
+    description: |
+      Cleaned Odoo purchase order lines. One row per product per PO; drives material security and PO-progress KPIs.
+    columns:
+      - name: purchase_order_line_id
+        tests: [not_null, unique]
+      - name: purchase_order_id
+        description: FK to purchase_order header.
+      - name: qty_received
+        description: Cumulative quantity received against this line.
+
+  - name: res_partner
+    description: Cleaned Odoo partners (customers, vendors, contacts, internal user partners). supplier_rank or customer_rank > 0 flags vendors/customers respectively.
+    columns:
+      - name: partner_id
+        tests: [not_null, unique]
+      - name: partner_name
+        description: Partner display name. On res_partner this is a regular STRING column (unlike product.name which is translation JSON).
+      - name: supplier_rank
+        description: Greater than 0 indicates the partner is used as a vendor.
+
+  - name: res_users
+    description: Cleaned Odoo internal users. Note that the display name lives on res_partner via partner_id, not on res_users directly.
+    columns:
+      - name: user_id
+        tests: [not_null, unique]
+      - name: partner_id
+        description: FK to res_partner. Join here to resolve the user's display name and contact details.
+      - name: login
+        description: Login identifier (usually the email).
+
+  - name: mrp_bom
+    description: Cleaned Odoo manufacturing Bill of Materials header. One row per BOM linked to a product template (and optionally a specific variant).
+    columns:
+      - name: bom_id
+        tests: [not_null, unique]
+      - name: product_template_id
+        description: FK to product_template that this BOM produces.
+      - name: bom_type
+        description: BOM type. Typical values include normal (manufacturing), phantom (kit), subcontract.
+
+  - name: mrp_bom_line
+    description: Cleaned Odoo manufacturing BOM lines. Components consumed to produce one unit of the parent BOM's product.
+    columns:
+      - name: bom_line_id
+        tests: [not_null, unique]
+      - name: bom_id
+        description: FK to the parent mrp_bom header.
+      - name: product_id
+        description: FK to product_product. The component variant consumed.
+
+  - name: uom_uom
+    description: Cleaned Odoo units of measure.
+    columns:
+      - name: uom_id
+        tests: [not_null, unique]
+
+  - name: wt_product_expert
+    description: |
+      Wingtra custom expert master. One row per product expert — the people referenced by `product_template.expert_id`.
+      Distinct from `res_users`: experts are subject-matter people attached to products, not Odoo system users.
+      Critical for correct expert-name resolution downstream — `expert_id` is m2o to this table, NOT `res_users`.
+    columns:
+      - name: expert_id
+        description: Primary key. Odoo `wt_product_expert.id`. Same numeric id space as `res_users` by coincidence; the two are unrelated.
+        tests: [not_null, unique]
+      - name: expert_name
+        description: Display name (plain string, not JSON).
