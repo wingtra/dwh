@@ -12,12 +12,22 @@ build/
 venv/
 env/
 .python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # dbt
 target/
 dbt_packages/
 dbt_modules/
 logs/
+dbt/.user.yml
+dbt/profiles.yml
+dbt/profiles.yml.local
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+dbt/dbt_modules/
 
 # IDE
 .vscode/
@@ -36,12 +46,21 @@ Thumbs.db
 !.env.example
 *.env
 !*.env.example
+*.local
+*.local.*
+*.secret
+*.secrets
+*.token
+*.credentials
 credentials/
 secrets/
+infra/config.env
+infra/*.env
 
 # SSH keys
 *.pem
 *.key
+*.pub
 infra/odoo_sh_id_ed25519
 infra/odoo_sh_id_ed25519.pub
 
@@ -51,9 +70,26 @@ infra/odoo_sh_id_ed25519.pub
 # MCP server config (contains API keys)
 .mcp.json
 
+# Local app / agent config
+.claude/
+docs/.claude/
+CLAUDE.local.md
+
 # Scratch / working files
 tmp/
 debug sqls/
+*.log
+*.tmp
+*.bak
+*.backup
+*.out
+
+# Local data exports and investigation dumps
+dump-summary.csv
+odoo18-dump-summary.csv
+*_dump_summary.csv
+*_export.csv
+*_comparison.csv
 
 # Obsidian notes config
 .obsidian/
