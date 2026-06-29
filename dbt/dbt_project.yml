@@ -19,11 +19,31 @@ clean-targets:
 
 models:
   wingtra_dwh:
-    staging:
+    clean:
       +materialized: view
-    intermediate:
-      +materialized: view
-    marts:
+      +schema: cl
+      odoo:
+        +schema: cl_odoo
+      revolut:
+        +schema: cl_revolut
+      external:
+        +schema: cl_external
+      seeds:
+        +schema: cl_seeds
+    object:
       +materialized: table
+      +schema: ol
+      ops:
+        +schema: ol_ops
+      finance:
+        +schema: ol_finance
+    business:
+      +materialized: table
+      +schema: bl
+      ops:
+        +schema: bl_ops
+      finance:
+        +schema: bl_finance
     metadata:
       +materialized: view
+      +schema: meta
