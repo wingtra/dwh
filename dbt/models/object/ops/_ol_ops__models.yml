@@ -1,0 +1,477 @@
+version: 2
+
+models:
+  - name: products
+    description: |
+      Wingtra runs one variant per template, so SKU = template = variant. CEE products are filtered upstream. The `standard_price_ag` column is a moving-average cost (the Odoo "standard price" field name is misleading).
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: product_variant
+        synonyms: ['SKU', 'product', 'item', 'product master']
+    columns:
+      - name: product_id
+        description: Primary key. Odoo product.product id.
+        tests: [not_null, unique]
+      - name: product_template_id
+        description: FK to product master (product_template).
+        tests: [not_null]
+      - name: product_code
+        description: Default code / internal reference shown to operators.
+      - name: product_name
+        description: English (en_GB) product name from product_template.name JSON.
+      - name: product_type
+        description: |
+          Product type, mapped from Odoo's `consu` / `service` to display labels `Goods` / `Service`. The Odoo 18 type enum only has these two values; storable-vs-consumable goods is captured separately in `is_storable`.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Goods', 'Service']
+      - name: product_type_label
+        description: |
+          Three-way label matching the SC KPI CTB sheet's "Product Type" column: 'Storable Product' (Goods + is_storable), 'Consumable' (Goods + not is_storable), 'Service'. Derived from product_type and is_storable; both source columns remain on the model.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Storable Product', 'Consumable', 'Service']
+      - name: product_role
+        description: |
+          Manufacturing role derived from active BoM membership:
+          `subassembly` (both BoM output and BoM component), `end_product`
+          (output only), `component` (component only), `999` (neither —
+          e.g. trading goods or unused items).
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['subassembly', 'end_product', 'component', '999']
+      - name: buy_sku_category
+        description: |
+          Kraljic strategic-sourcing class for the SKU, calculated in
+          `il.buy_sku_categories` from spend × complexity inputs in the
+          Spend Categorization 2026 sheet. NULL when the SKU isn't
+          categorised in the sheet (no spend or no complexity score).
+          Values: Strategic Alliance / Leverage Opportunity / Bottleneck /
+          Just Buy It.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Strategic Alliance', 'Leverage Opportunity', 'Bottleneck', 'Just Buy It']
+      - name: is_active
+        description: True when both variant and template are active.
+        tests: [not_null]
+      - name: is_purchasable
+        description: Template purchase_ok flag. True for BUY SKUs.
+      - name: is_saleable
+        description: Template sale_ok flag. True for SELL SKUs.
+      - name: list_price
+        description: |
+          Odoo `product_template.list_price`. Single Float per template; Odoo does NOT store a currency on this field.
+          Assumed to be CHF (Wingtra operates effectively single-company in AG). For shared multi-company templates (`company_id IS NULL`, ~46% of rows) Odoo gives no signal; we assume CHF. Revisit if anyone starts entering list prices in a non-CHF currency. Intentionally not paired with a `list_price_currency` column — `standard_price_ag_currency` is always equal so the second column was redundant. See `questions_for_kathryn.md` for the open verification.
+      - name: standard_price_ag
+        description: Moving-average cost extracted from `product_product.standard_price` JSON key `"1"` (company 1 = AG). NULL until the product's first receipt sets the average cost — common on newly created or never-received products. Despite the field name, this is a moving-average cost (not standard), because all active categories use `average` costing method.
+      - name: standard_price_ag_currency
+        description: |
+          Hardcoded as 'CHF'. Pairs with `standard_price_ag` per modeling rule 20.
+          This is reliable: the value is extracted from JSON key `"1"` (company 1 = AG), and `res_company.currency_id` for AG is CHF. Would only break if someone reconfigured AG's base currency.
+      - name: expert_name
+        description: Display name of the engineering expert assigned to the product template (`product_template.expert_id` → `il.users.user_name`). Wingtra-specific role. NULL when no expert is set on the template.
+      - name: hs_code
+        description: HS commodity code from `product_template.hs_code` (plain string). Used for customs declarations on shipments. Sparse — populated for ~25% of templates.
+      - name: other_supplier_partner_ids
+        description: |
+          Array of `res_partner.id` for every NON-primary supplier of the product template, ordered by Odoo `product_supplierinfo.sequence` (tie-break: `product_supplierinfo_id`). Empty array `[]` when the template has only one supplier (normalised via `COALESCE`, so no NULLs). Does not exclude Wingtra AG self-supplier (matches the primary's behaviour).
+      - name: primary_supplier_price
+        description: |
+          Vendor price per unit from `product_supplierinfo.price` of the lowest-`sequence` supplier for the template. Paired with `primary_supplier_price_currency_id`.
+          NOT the same as `standard_price_ag` (which is the moving-average internal cost). This is the agreed vendor quote that the next PO would be priced at.
+          Caveat: the current pick does not exclude Wingtra AG as self-supplier (partner_id=1), unlike Odoo's product list view.
+      - name: primary_supplier_price_currency_id
+        description: FK to `res_currency.id` for `primary_supplier_price`. Pairs with `primary_supplier_price` per modeling rule 20. Resolving to a code (CHF / USD / EUR) requires a CL `res_currency` model which doesn't exist yet — join `dl_odoo.res_currency` directly in the meantime.
+      - name: primary_supplier_min_order_qty
+        description: Minimum order quantity (MOQ) from `product_supplierinfo.min_qty` of the primary supplier. The smallest qty the vendor will accept on a PO. In the product's UoM.
+      - name: primary_supplier_lead_time_days
+        description: Vendor-promised lead time in days from `product_supplierinfo.delay` of the primary supplier. Calendar days from PO confirmation to vendor's promised delivery.
+      - name: take_rate
+        description: |
+          Consolidated BOM quantity per finished drone (a.k.a. take rate)
+          from `il.take_rates` → IMM. NULL when the SKU isn't tracked in
+          IMM. The ~12 EOL products that have a hand-typed fallback in
+          the original CTB sheet's column P aren't surfaced here yet —
+          federation of that fallback is a deferred item in
+          `dbt/questions_for_kathryn.md`.
+      - name: odoo_max_qty
+        description: |
+          Odoo orderpoint MAX from the AG Wingtra INVENTORY MASTER sheet
+          (`cl.gsheet_inventory_master_ag.odoo_max_qty`). NULL when the
+          SKU isn't tracked in IMM.
+
+  - name: purchase_orders
+    description: |
+      One row per purchase order across all states.
+      PO header entity. Vendor and buyer names denormalized; is_open is
+      derived from "any line has unreceived qty AND state IN ('purchase','done')".
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: purchase_order
+        synonyms: ['PO', 'purchase order', 'order header']
+    columns:
+      - name: purchase_order_id
+        description: Primary key. Odoo purchase.order id.
+        tests: [not_null, unique]
+      - name: vendor_organization_id
+        description: FK to ol.organizations. Resolved from the raw PO partner_id — when the PO points at a sub-record (delivery/invoice/contact) we walk parent_partner_id to the company header.
+        tests: [not_null]
+      - name: purchase_order_state
+        description: Odoo PO state.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['draft', 'sent', 'to approve', 'purchase', 'done', 'cancel']
+      - name: is_open
+        description: True when any line has qty_received < product_qty AND state IN ('purchase','done').
+        tests: [not_null]
+      - name: is_cancelled
+        description: True when purchase_order_state = 'cancel'.
+        tests: [not_null]
+      - name: amount_total
+        description: Grand total in CHF (company 1).
+      - name: amount_total_currency
+        description: Constant 'CHF'. Pairs with amount_total per modeling rule 20.
+
+  - name: purchase_order_lines
+    description: |
+      One row per purchase order product line across all PO states.
+      Display-only lines (line_section, line_note) are excluded — they carry
+      no product and no procurement quantity. Header dimensions (PO name,
+      state, order date) and product dimensions (code, name) are denormalized.
+      is_open is per-line: state IN ('purchase','done') AND qty_received < product_qty.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: purchase_order_line
+        synonyms: ['PO line', 'purchase line', 'order line']
+    columns:
+      - name: purchase_order_line_id
+        description: Primary key. Odoo purchase.order.line id.
+        tests: [not_null, unique]
+      - name: purchase_order_id
+        description: FK to ol_purchase_orders.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('purchase_orders')
+                field: purchase_order_id
+      - name: product_id
+        description: FK to ol_products.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('products')
+                field: product_id
+      - name: is_open
+        description: True when state IN ('purchase','done') AND qty_received < product_qty.
+        tests: [not_null]
+      - name: qty_remaining
+        description: product_qty − qty_received. Positive when the line is open.
+
+  - name: stock_at_locations
+    description: |
+      Ground-truth stock model at the natural Odoo stock.quant grain
+      (product × location × lot × package × owner). One row per quant.
+      Every location is included — internal, transit, supplier, customer,
+      virtual (Quarantine, B-Grade, Production offset, Scrap, etc.). CL
+      already drops CEE (company_id = 8); no further scope filter at this
+      layer. Report-specific scope (WWH-only for SC KPI CTB, broader
+      internal for KPI-09 stock valuation) is applied at the consuming
+      BL/OL model.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: quant
+        synonyms: ['stock', 'inventory', 'on hand', 'OH', 'stock by location', 'where is what']
+    columns:
+      - name: product_id
+        description: FK to ol_products.product_id.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('products')
+                field: product_id
+      - name: location_id
+        description: FK to ol_stock_locations.location_id.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stock_locations')
+                field: location_id
+      - name: lot_id
+        description: FK to Odoo stock.lot — production lot or serial. NULL when the product is not lot- or serial-tracked.
+      - name: package_id
+        description: FK to Odoo stock.quant.package — physical container. NULL when not packaged.
+      - name: owner_id
+        description: FK to res.partner — owner of the stock. NULL when owned by the company.
+      - name: company_id
+        description: Odoo company (1 = AG, 9 = Corp). CEE (8) excluded at CL.
+      - name: in_date
+        description: When this quant first appeared at this location.
+      - name: updated_at
+        description: When Odoo last wrote to this quant row.
+      - name: product_code
+        description: Odoo product_product.default_code — SKU label.
+      - name: product_name
+        description: Odoo product_template.name.
+      - name: location_full_path
+        description: Human-readable location path (e.g. "WWH/Stock", "Virtual Locations/Production").
+      - name: location_usage
+        description: Odoo usage classification — internal, transit, supplier, customer, inventory, production, view.
+      - name: location_is_active
+        description: Whether the location is currently active in Odoo.
+      - name: is_wwh_internal
+        description: Convenience flag — TRUE for internal locations under the WWH subtree (parent_path LIKE '1/7/%'). Used by the SC KPI CTB OH Inventory scope.
+      - name: quantity
+        description: Physical on-hand quantity in product UoM.
+        tests: [not_null]
+      - name: reserved_quantity
+        description: Quantity earmarked for outgoing pickings. Meaningful only at internal locations; 0 or NULL elsewhere.
+      - name: available_quantity
+        description: quantity - coalesce(reserved_quantity, 0). Equals quantity at non-internal locations.
+
+  - name: stock_locations
+    description: |
+      Stock-location dimension. One row per Odoo stock.location, including inactive locations (historical stock_move events reference them). Covers internal warehouses, supplier / customer virtuals, production / scrap / inventory-adjustment virtual locations.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: stock_location
+        synonyms: ['location', 'warehouse location', 'bin', 'stock location']
+    columns:
+      - name: location_id
+        description: Primary key. Odoo `stock.location.id`.
+        tests: [not_null, unique]
+      - name: parent_location_id
+        description: Self-FK to the parent location. NULL for top-level locations.
+      - name: warehouse_id
+        description: FK to stock_warehouse. NULL for locations not under a warehouse (e.g. virtuals).
+      - name: location_name
+        description: Leaf-level location name.
+      - name: location_full_path
+        description: Slash-separated path from root to this location (e.g. `WWH/Stock/Shelf-A1`).
+      - name: parent_path
+        description: Odoo materialised-path string (e.g. `1/7/15/`). Useful for ancestor queries via `LIKE`.
+      - name: location_usage
+        description: Odoo usage classification.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['internal', 'transit', 'supplier', 'customer', 'inventory', 'production', 'view']
+      - name: is_active
+      - name: is_scrap_location
+      - name: is_wwh_internal
+        description: TRUE for Wingtra-Warehouse-AG internal locations (`parent_path LIKE '1/7/%'` AND `location_usage = 'internal'`). Matches the scope used by the CTB workflow and the OH-Inventory tab.
+
+  - name: stock_movements
+    description: |
+      Stock-movement fact, unpivoted to one row per move-LEG. Every Odoo `stock_move` produces two rows: a `src` leg with negative quantity at the source location, and a `dest` leg with positive quantity at the destination location.
+      Consequence: `SUM(quantity_signed) GROUP BY product_id, location_id WHERE move_state='done'` equals the on-hand Odoo's UI shows, at every internal location.
+      Caveat — reconciliation holds for `is_storable = TRUE` products (96% match exactly, ~16 / 415 storable products have small historical drift documented in process-improvements.md). Consumables aren't tracked by stock_quant in Odoo so the sum-equals-UI promise doesn't apply to them.
+      CEE rows (`company_id = 8`) filtered out. All move states included.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: stock_move_leg
+        synonyms: ['stock move', 'movement', 'inventory event', 'inventory transaction']
+    columns:
+      - name: stock_move_id
+        description: FK to Odoo `stock_move.id`. NOT unique on its own — appears twice (once per leg). Compose with `leg_role` for uniqueness.
+        tests: [not_null]
+      - name: product_id
+        description: FK to ol.products.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('products')
+                field: product_id
+      - name: location_id
+        description: The location THIS leg refers to (src for `leg_role='src'`, dest for `leg_role='dest'`). FK to ol.stock_locations.
+        tests: [not_null]
+      - name: src_location_id
+        description: Source location of the original stock_move (same on both legs).
+      - name: dest_location_id
+        description: Destination location of the original stock_move (same on both legs).
+      - name: leg_role
+        description: Which leg of the move this row represents — `src` (negative) or `dest` (positive).
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['src', 'dest']
+      - name: move_state
+        description: Odoo lifecycle state of the underlying stock_move.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['draft', 'waiting', 'confirmed', 'partially_available', 'assigned', 'done', 'cancel']
+      - name: move_type
+        description: |
+          Derived classification of the move based on src/dest `location_usage` and flags (`scrap_id`, `is_inventory`, `origin_returned_move_id`):
+          `receipt` (supplier → internal), `delivery` (internal → customer), `manufacturing_consumption` (internal → production), `manufacturing_output` (production → internal), `internal_transfer` (internal → internal), `scrap` (any leg of a scrap move), `inventory_adjustment` (is_inventory true), `return` (origin_returned_move_id set), `other` (uncategorised).
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['receipt', 'delivery', 'manufacturing_consumption', 'manufacturing_output', 'internal_transfer', 'scrap', 'inventory_adjustment', 'return', 'other']
+      - name: move_date
+        description: COALESCE(date_done, scheduled_date). The single canonical date for filtering moves chronologically.
+      - name: quantity_signed
+        description: Negative on src leg, positive on dest leg. SUM over (product, location, state='done') = current on-hand at that location.
+        tests: [not_null]
+      - name: quantity_abs
+        description: Unsigned move quantity (same on both legs of a given stock_move).
+        tests: [not_null]
+      - name: is_done
+        tests: [not_null]
+      - name: is_pending
+        description: TRUE when state is one of `confirmed`, `waiting`, `partially_available`, `assigned` (i.e., a planned move not yet executed).
+        tests: [not_null]
+      - name: value_signed
+        description: quantity_signed * price_unit. Approximate inventory value movement. price_unit is often NULL on internal moves.
+
+  - name: organizations
+    description: |
+      External companies we transact with. Vendor, customer, both, or unflagged. Excludes contacts, addresses, and internal-user partner records — those live in `ol.contacts` and `il.users`.
+      Universe: `is_company = TRUE` plus a small set of standalone individuals (sole traders) that have PO/SO history. `is_vendor` and `is_customer` are derived from `supplier_rank` / `customer_rank` OR from PO/SO history (the rank-hygiene gap workaround).
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: organization
+        synonyms: ['company', 'partner', 'vendor', 'customer', 'org']
+    columns:
+      - name: organization_id
+        description: Primary key. From `res_partner.id`.
+        tests: [not_null, unique]
+      - name: organization_name
+      - name: country_id
+      - name: vat
+      - name: is_active
+      - name: is_company
+        description: TRUE for proper companies. FALSE for sole-trader individuals that we still treat as an organization because they have transaction history.
+      - name: is_vendor
+        description: TRUE if `supplier_rank > 0` OR the org appears as the (resolved) vendor on any PO. Used to fix the rank-hygiene gap.
+      - name: is_customer
+        description: TRUE if `customer_rank > 0` OR the org appears as the (resolved) customer on any SO.
+
+  - name: contacts
+    description: |
+      People attached to an organization. The buyer at a customer, the sales rep at a vendor. FK back to `ol.organizations`. Excludes delivery / invoice addresses and internal-user partner records.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: contact
+        synonyms: ['person', 'contact', 'individual']
+    columns:
+      - name: contact_id
+        description: Primary key. From `res_partner.id`.
+        tests: [not_null, unique]
+      - name: organization_id
+        description: FK to `ol.organizations`.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('organizations')
+                field: organization_id
+      - name: contact_name
+      - name: job_position
+      - name: email
+      - name: phone
+      - name: mobile
+
+  - name: boms
+    description: |
+      Bill of Materials headers. One row per `mrp_bom` (active and inactive). Each row describes how to produce `output_qty` units of `product_template_id` (and optionally a specific variant via `product_id`).
+      `bom_type` distinguishes `normal` (own MO), `phantom` (kit inlined transparently at parent assembly time), and `subcontract` (produced externally).
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: bom_header
+        synonyms: ['BOM', 'bill of materials']
+    columns:
+      - name: bom_id
+        description: Primary key. Odoo `mrp_bom.id`.
+        tests: [not_null, unique]
+      - name: product_template_id
+        description: FK to product master (the template this BOM produces).
+      - name: product_id
+        description: FK to a specific variant. NULL for template-level BOMs (the default).
+      - name: bom_type
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['normal', 'phantom', 'subcontract']
+      - name: is_active
+      - name: is_phantom
+      - name: is_subcontract
+      - name: output_qty
+        description: Units of `product_template_id` produced by one execution of this BOM.
+
+  - name: bom_lines
+    description: |
+      Bill of Materials lines. One row per `mrp_bom_line`. Each line consumes `component_qty` of `component_product_id` per execution of the parent BOM. Parent and component product info denormalized so consumers don't need additional joins for common questions.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: bom_line
+        synonyms: ['BOM line', 'BOM component']
+    columns:
+      - name: bom_line_id
+        description: Primary key. Odoo `mrp_bom_line.id`.
+        tests: [not_null, unique]
+      - name: bom_id
+        description: FK to `ol.boms`.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('boms')
+                field: bom_id
+      - name: component_product_id
+        description: FK to `ol.products` — the part consumed by this line.
+      - name: component_qty
+        description: How many units of the component are consumed per one execution of the parent BOM.

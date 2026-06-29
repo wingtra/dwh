@@ -64,11 +64,10 @@ models:
       +schema: cl
       odoo:
         +schema: cl_odoo
+        +tags: ["daily", "odoo", "ops"]
       revolut:
         +schema: cl_revolut
         +tags: ["weekly", "finance"]
-      external:
-        +schema: cl_external
       seeds:
         +schema: cl_seeds
         +tags: ["weekly", "finance"]
@@ -77,6 +76,7 @@ models:
       +schema: ol
       ops:
         +schema: ol_ops
+        +tags: ["daily", "odoo", "ops"]
       finance:
         +schema: ol_finance
         +tags: ["weekly", "finance"]
@@ -85,9 +85,14 @@ models:
       +schema: bl
       ops:
         +schema: bl_ops
+        +tags: ["daily", "odoo", "ops"]
       finance:
         +schema: bl_finance
         +tags: ["weekly", "finance"]
+    integration:
+      +materialized: view
+      +schema: il_ops
+      +tags: ["daily", "odoo", "ops"]
     metadata:
       +materialized: view
       +schema: meta

@@ -49,8 +49,12 @@ dbt-runner-daily  -> DBT_SELECTOR=daily
 dbt-runner-weekly -> DBT_SELECTOR=weekly
 ```
 
-Current production dbt work is weekly because the Revolut raw loader runs
-weekly. Enable the daily scheduler only after daily-tagged dbt resources exist.
+Current production dbt schedules:
+
+```text
+daily  -> Odoo/ops models after the daily Odoo raw load
+weekly -> Revolut/finance models after the weekly Revolut raw load
+```
 
 The `scheduled` selector is a manual catch-up selector for the union of daily
 and weekly resources. Do not use it as the default daily production selector,

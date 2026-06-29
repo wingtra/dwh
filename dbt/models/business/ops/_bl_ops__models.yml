@@ -1,0 +1,95 @@
+version: 2
+
+models:
+  - name: consolidated_ctb_kpi
+    description: |
+      Daily-snapshot, append-only per-SKU table mirroring the CONSOLIDATED
+      CTB KPI tab in SC KPI CTB.xlsx (`1sZLfXHke1ZajukDuxRwLfFIfuTVNYuno`).
+      One snapshot is appended per dbt run (partitioned on
+      `snapshot_date`); consumers wanting "current" must filter to
+      `MAX(snapshot_date)`. Columns A..AB follow the sheet; G..O and
+      AC/AD are hand-typed in the source sheet and omitted here.
+      Grain: (snapshot_date, product_reference).
+
+      Scope rule (confirmed with Jan 2026-06-05): storable + active +
+      AG company + not manufactured (no active normal BOM as output) +
+      `purchase_ok = TRUE` + has at least one active supplier. If
+      `part_number` starts with `/` (R&D obsolete revision) the SKU is
+      only kept while on-hand > 0; it drops out once stock is consumed.
+
+      IMM-missing handling: when `take_rate IS NULL`, all 7 IMM-dependent
+      columns (`weekly_qty_need`, `imm_odoo_min`, `imm_odoo_max`,
+      `imm_daily_demand`, `planned_time_demand`, `balance`,
+      `ohi_weeks_coverage`) plus the two status columns and
+      `estimated_stock_runway` show the literal string "Take Rate is
+      Missing in IMM". Columns are STRING.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: bl
+        consumer_type: bi_and_reporting
+        grain: snapshot_date+product
+        synonyms: ['CTB', 'Clear-To-Build', 'CONSOLIDATED CTB KPI', 'material security weekly']
+    columns:
+      - name: snapshot_date
+        description: ISO date when this snapshot was captured. Partitioning column. The table appends one snapshot per dbt run; consumers wanting "current" must filter to MAX(snapshot_date).
+        tests:
+          - not_null
+      - name: product_reference
+        description: A — Sheet's "PRODUCT REFERENCE". Odoo product_product.default_code. Unique only within a single `snapshot_date` (see model-level composite uniqueness test).
+        tests:
+          - not_null
+      - name: product_name
+        description: B — Sheet's "Product Name". `[product_code] product_name`.
+      - name: primary_supplier
+        description: C — Sheet header "SUPPLIER". Primary supplier from product_supplierinfo (lowest sequence).
+      - name: product_type
+        description: D — Sheet's "PRODUCT TYPE". Universe is storable so this is effectively constant `Storable Product`.
+      - name: buy_sku_category
+        description: E — Sheet's "BUY SKU CATEGORY". From product_template.buy_sku_category.
+      - name: prod_cat
+        description: F — Sheet's "PROD CAT". product_category.complete_name.
+      - name: take_rate
+        description: P — IMM take_rate. NULL when SKU is not in IMM. From `ol.products.take_rate`.
+      - name: weekly_qty_need
+        description: Q — Sheet's "WEEKLY QTY NEED". `take_rate × 18` formatted. STRING because the column emits "Take Rate is Missing in IMM" when take_rate is null.
+      - name: imm_odoo_min
+        description: R — Sheet's "IMM ODOO MIN". STRING. Direct from `cl.gsheet_inventory_master_ag.odoo_min_qty`; emits "Take Rate is Missing in IMM" when take_rate is null.
+      - name: imm_odoo_max
+        description: S — Sheet's "IMM ODOO MAX". STRING. Direct from `cl.gsheet_inventory_master_ag.odoo_max_qty`; emits "Take Rate is Missing in IMM" when take_rate is null.
+      - name: imm_daily_demand
+        description: T — Sheet's "IMM DAILY DEMAND". STRING. Direct from `cl.gsheet_inventory_master_ag.demand_per_day`; emits "Take Rate is Missing in IMM" when take_rate is null.
+      - name: planned_time_demand
+        description: U — Sheet's "PLANNED TIME DEMAND". STRING. `take_rate × 108`; emits "Take Rate is Missing in IMM" when take_rate is null.
+      - name: oh_inv
+        description: V — Sheet's "OH INV". SUM(quantity) over ol.stock_at_locations filtered by is_wwh_internal AND company_id=1. 0 when no quants exist. Numeric; independent of IMM.
+        tests: [not_null]
+      - name: balance
+        description: W — Sheet's "BALANCE". V − U. STRING. Emits "Take Rate is Missing in IMM" when take_rate is null.
+      - name: expected_arrival_qty
+        description: X — Quantity remaining on the open PO line whose planned date is closest to today by absolute distance (past and future compete equally — Jan's rule 2026-06-05). 0 when no open PO. Numeric; independent of IMM.
+        tests: [not_null]
+      - name: expected_arrival_date
+        description: Y — Planned date of the open PO line whose planned date is closest to today by absolute distance. NULL when no open PO.
+      - name: status_6wks_outlook
+        description: |
+          Z — Sheet's "STATUS 6 WKS OUTLOOK". STRING. Outcomes:
+            OK | MONITOR | ESCALATE | Take Rate is Missing in IMM
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['OK', 'MONITOR', 'ESCALATE', 'Take Rate is Missing in IMM']
+      - name: status_6wks_outlook_reason
+        description: |
+          Verbose sibling of status_6wks_outlook — names which clause of
+          the decision tree fired. STRING. Useful for reconciliation and
+          for explaining individual SKU statuses to SC owners. Not in
+          the sheet.
+        tests: [not_null]
+      - name: estimated_stock_runway
+        description: AA — STRING. ISO week/year (`%V/%G`) when stock-on-hand runs out at IMM daily demand, or "No demand" when take_rate is zero, or "Take Rate is Missing in IMM" when take_rate is null.
+      - name: ohi_weeks_coverage
+        description: AB — Sheet's "OHI WEEKS COVERAGE". STRING. oh / (take_rate × 18); emits "Take Rate is Missing in IMM" when take_rate is null.
+      - name: part_number
+        description: R&D PDM number from `product_template.part_number`. A "/" prefix signals R&D obsolete revision; rows with a `/`-prefix and zero on-hand are filtered out by the scope rule.

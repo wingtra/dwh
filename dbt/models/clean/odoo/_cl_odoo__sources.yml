@@ -1,0 +1,23 @@
+version: 2
+
+sources:
+  - name: odoo
+    database: wingtra-dwh
+    schema: dl_odoo
+    tables:
+      - name: mrp_bom
+      - name: mrp_bom_line
+      - name: product_category
+      - name: product_product
+      - name: product_supplierinfo
+      - name: product_template
+      - name: purchase_order
+      - name: purchase_order_line
+      - name: res_partner
+      - name: res_users
+      - name: sale_order
+      - name: stock_location
+      - name: stock_move
+      - name: stock_quant
+      - name: uom_uom
+      - name: wt_product_expert

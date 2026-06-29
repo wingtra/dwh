@@ -1,0 +1,205 @@
+version: 2
+
+models:
+  - name: product_dimensions
+    description: |
+      Canonical product join. One row per product variant that is currently
+      active OR referenced by any historical fact (PO line, stock move,
+      stock quant, BOM header, BOM line). Fully archived + never-referenced
+      variants are dropped. The is_active column tells consumers whether
+      the variant is still active today.
+      Built from product_product + product_template + product_category +
+      uom_uom + primary supplier + responsible / SCM users. Private to the
+      warehouse — consumers read ol_product, ol_purchase_order_line,
+      ol_stock_position, or ol_material_balance.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: il
+        consumer_type: warehouse_internal
+        grain: product_variant
+    columns:
+      - name: product_id
+        description: Primary key. Odoo product.product id.
+        tests: [not_null, unique]
+      - name: product_template_id
+        description: FK to product_template (product master). Not null.
+        tests: [not_null]
+      - name: is_active
+        tests: [not_null]
+      - name: product_role
+        description: |
+          Manufacturing role derived from BoM membership (active BoMs only):
+          `subassembly` — product is both BoM output and BoM component;
+          `end_product` — output only;
+          `component` — component only;
+          `999` — neither (e.g. trading goods, consumables not in any BoM).
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [subassembly, end_product, component, '999']
+
+  - name: planned_demand_per_skus
+    description: |
+      Per-SKU planning summary. One row per active BUY SKU.
+      Joins gsheet_inventory_master_ag (Wingtra SC planning master) to
+      product_dimension. Carries lead time, take rate, weekly demand,
+      and the 6-week horizon demand. Feeds ol_material_balance. Active BUY
+      SKUs are those flagged is_buy_sku in the master AND is_active +
+      is_purchasable in Odoo AND with demand_per_day > 0.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: il
+        consumer_type: warehouse_internal
+        grain: product_variant
+    columns:
+      - name: product_id
+        description: Primary key. FK to il_product_dimensions.product_id.
+        tests: [not_null, unique]
+      - name: product_code
+        description: Odoo default_code matching the master sheet SKU column.
+        tests: [not_null]
+      - name: demand_per_day
+        description: Per-calendar-day demand from the master sheet. Always > 0 in this view (zeros filtered).
+        tests: [not_null]
+      - name: weekly_demand_qty
+        description: demand_per_day * 7.
+        tests: [not_null]
+      - name: horizon_demand_qty
+        description: demand_per_day * 7 * 6 (six-week planning horizon).
+        tests: [not_null]
+      - name: horizon_start_date
+        description: ISO-week Monday (Europe/Zurich) of the current week.
+        tests: [not_null]
+      - name: horizon_end_date
+        description: horizon_start_date + 42 days.
+        tests: [not_null]
+      - name: odoo_min_qty
+        description: Odoo orderpoint MIN from the Inventory Master sheet. Used by ol_material_balance to back-stop MONITOR classification.
+      - name: odoo_max_qty
+        description: Odoo orderpoint MAX from the Inventory Master sheet.
+
+  - name: users
+    description: |
+      Canonical user resolution. One row per Odoo internal user (`res_users`),
+      joined to `res_partner` for the display name and contact details. The
+      display name lives on `res_partner` via `res_users.partner_id` — `res_users`
+      itself has no name column.
+      Private to the warehouse — consumers join here to surface user names
+      (responsible, scm, buyer, sales rep, etc.) without repeating the
+      `res_users` ↔ `res_partner` join.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: il
+        consumer_type: warehouse_internal
+        grain: user
+    columns:
+      - name: user_id
+        description: Primary key. Odoo `res_users.id`.
+        tests: [not_null, unique]
+      - name: partner_id
+        description: FK to res_partner — where the user's display name and email live.
+      - name: user_name
+        description: Display name from `res_partner.partner_name`.
+      - name: login
+        description: Login identifier (usually the email).
+      - name: is_active
+        description: User active flag.
+
+  - name: buy_sku_categories
+    description: |
+      Kraljic strategic-sourcing classification per BUY SKU. One row per
+      product_code with a legitimate classification — rows missing either
+      annualised spend or complexity score are dropped entirely (so the
+      "Check Inputs" fallback bucket from the source sheet is never emitted).
+      Computed from `cl.gsheet_spend_categorization` (Spend Categorization
+      2026, tab SpendxComplexity) using the spend × complexity 2×2:
+        spend_threshold_chf  = 66,729.06 (SpendxComplexity!L4)
+        complexity_threshold = 7         (SpendxComplexity!M4)
+      Precedence mirrors the sheet's IFS — first match wins, ties at the
+      threshold land in the higher-tier bucket.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: il
+        consumer_type: warehouse_internal
+        grain: product_code
+    columns:
+      - name: product_code
+        description: Odoo `default_code`. Primary key.
+        tests: [not_null, unique]
+      - name: buy_sku_category
+        description: Kraljic strategic-sourcing class.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Strategic Alliance', 'Leverage Opportunity', 'Bottleneck', 'Just Buy It']
+
+  - name: take_rates
+    description: |
+      Per-SKU take rate (consolidated BOM quantity per finished drone)
+      sourced from the AG Wingtra INVENTORY MASTER sheet
+      (`cl.gsheet_inventory_master_ag`). One row per `product_code`
+      where IMM provides a non-null `take_rate` — rows with NULL
+      take_rate are dropped so the model never asserts a value for
+      SKUs IMM doesn't plan. The ~12 EOL products that the original
+      CTB sheet falls back to via its column P hand-typed values are
+      NOT covered here — federation of that fallback is deferred.
+      Used by `il.product_dimensions` to expose `take_rate` on
+      `ol.products` so `bl.ctb_weekly_report` can drop its direct
+      IMM join.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: il
+        consumer_type: warehouse_internal
+        grain: product_code
+    columns:
+      - name: product_code
+        description: Odoo `default_code`. Primary key.
+        tests: [not_null, unique]
+      - name: take_rate
+        description: Consolidated BOM quantity per finished drone from IMM.
+        tests: [not_null]
+
+  - name: bom_consolidated_components
+    description: |
+      Recursive BOM-explosion aggregate. For every active BOM, walks all
+      sub-BOMs (both phantom AND normal) and accumulates component quantities.
+      Answers: "to produce one unit of `top_template_id`, how many of
+      `component_product_id` do I consume in total — including everything
+      inside sub-assemblies?"
+      This is the planning-view rollup that matches what IMM `take_rate` is
+      intended to capture. Both phantom and normal sub-BOMs are inlined
+      because material planning still needs the raw inputs of sub-assemblies.
+      Grain: one row per (top_template_id, component_product_id).
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: il
+        consumer_type: warehouse_internal
+        grain: top_template_x_component
+    columns:
+      - name: top_template_id
+        description: The product_template_id that owns the top-level BOM.
+        tests: [not_null]
+      - name: component_product_id
+        description: The variant id of the component (leaf or intermediate).
+        tests: [not_null]
+      - name: consolidated_qty
+        description: Total qty of component consumed per one unit of top template output, summed across all expansion paths.
+        tests: [not_null]
+      - name: depth_max
+        description: Deepest expansion level at which this component appears under this top template.
+      - name: path_count
+        description: Number of distinct paths from top to component.
