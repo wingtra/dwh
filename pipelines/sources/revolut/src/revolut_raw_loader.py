@@ -116,6 +116,7 @@ TRANSACTIONS_SCHEMA = [
     bigquery.SchemaField("transaction_raw_json", "JSON"),
     bigquery.SchemaField("leg_raw_json", "JSON"),
     bigquery.SchemaField("loaded_at", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("_dlt_deleted_at", "TIMESTAMP"),
 ]
 
 ACCOUNTS_SCHEMA = [
@@ -134,6 +135,7 @@ ACCOUNTS_SCHEMA = [
     bigquery.SchemaField("updated_at", "TIMESTAMP"),
     bigquery.SchemaField("account_raw_json", "JSON"),
     bigquery.SchemaField("loaded_at", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("_dlt_deleted_at", "TIMESTAMP"),
 ]
 
 RUNS_SCHEMA = [
@@ -652,6 +654,7 @@ def _account_rows(accounts: list[dict[str, Any]], run_id: str, extracted_at: str
                 "updated_at": account.get("updated_at"),
                 "account_raw_json": account,
                 "loaded_at": extracted_at,
+                "_dlt_deleted_at": None,
             }
         )
     return rows
@@ -731,6 +734,7 @@ def _transaction_rows(
                         "transaction_raw_json": transaction,
                         "leg_raw_json": leg,
                         "loaded_at": extracted_at,
+                        "_dlt_deleted_at": None,
                     }
                 )
                 global_index += 1

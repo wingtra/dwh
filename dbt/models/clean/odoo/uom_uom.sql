@@ -28,3 +28,5 @@ SELECT
     rounding
     
 FROM {{ source('odoo', 'uom_uom') }}
+
+WHERE _dlt_deleted_at IS NULL

@@ -88,4 +88,5 @@ SELECT
 FROM {{ source('odoo', 'stock_move') }}
 
 -- Filter out CEE (company_id=8) per project policy.
-WHERE company_id IS NULL OR company_id != 8
+WHERE _dlt_deleted_at IS NULL
+  AND (company_id IS NULL OR company_id != 8)

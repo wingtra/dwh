@@ -22,3 +22,5 @@ SELECT
     _dlt_id as dlt_id
 
 FROM {{ source('odoo', 'wt_product_expert') }}
+
+WHERE _dlt_deleted_at IS NULL

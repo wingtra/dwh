@@ -30,3 +30,5 @@ SELECT
     cost_share
 
 FROM {{ source('odoo', 'mrp_bom_line') }}
+
+WHERE _dlt_deleted_at IS NULL

@@ -25,6 +25,8 @@ sources:
             description: Full Revolut transaction JSON response kept for CL/dbt parsing and auditability.
           - name: leg_raw_json
             description: Full Revolut transaction leg JSON kept for CL/dbt parsing of counterparty and amount fields.
+          - name: _dlt_deleted_at
+            description: Soft-delete marker. CL models keep only rows where this is NULL.
       - name: accounts
         description: Append-only extraction log for Revolut Business accounts.
         columns:
@@ -36,6 +38,8 @@ sources:
             description: Timestamp when the raw-loader run extracted this row.
           - name: gcs_uri
             description: Immutable GCS JSONL object containing the source API response for this row.
+          - name: _dlt_deleted_at
+            description: Soft-delete marker. CL models keep only rows where this is NULL.
       - name: _pipeline_runs
         description: Raw-loader run audit table keyed by run_id.
       - name: _api_requests

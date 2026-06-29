@@ -14,7 +14,8 @@
 with source as (
     select *
     from {{ source('dl_revolut', 'accounts') }}
-    where account_id is not null
+    where _dlt_deleted_at is null
+      and account_id is not null
 ),
 
 latest as (

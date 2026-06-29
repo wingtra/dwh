@@ -58,3 +58,5 @@ SELECT
     customer_rank
 
 FROM {{ source('odoo', 'res_partner') }}
+
+WHERE _dlt_deleted_at IS NULL

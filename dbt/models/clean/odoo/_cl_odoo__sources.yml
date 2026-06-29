@@ -4,6 +4,7 @@ sources:
   - name: odoo
     database: wingtra-dwh
     schema: dl_odoo
+    description: Raw Odoo tables loaded with soft deletes preserved via `_dlt_deleted_at`. CL models keep only rows where this is NULL.
     tables:
       - name: mrp_bom
       - name: mrp_bom_line
