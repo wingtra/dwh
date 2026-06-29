@@ -17,6 +17,46 @@ clean-targets:
   - dbt_packages
   - logs
 
+seeds:
+  wingtra_dwh:
+    +schema: seeds
+    +tags: ["daily", "finance"]
+    claude_seat_usage_2026_05:
+      +column_types:
+        user_email: STRING
+        account_uuid: STRING
+        product: STRING
+        model: STRING
+        total_requests: INT64
+        total_prompt_tokens: INT64
+        total_completion_tokens: INT64
+        total_net_spend_usd: FLOAT64
+        total_gross_spend_usd: FLOAT64
+        user_id: STRING
+        total_uncached_input_tokens: INT64
+        total_cache_read_tokens: INT64
+        total_cache_write_5m_tokens: INT64
+        total_cache_write_1h_tokens: INT64
+        total_web_search_count: INT64
+        report_period_start: DATE
+        report_period_end: DATE
+    claude_members_2026_06_18:
+      +column_types:
+        member_name: STRING
+        user_email: STRING
+        member_role: STRING
+        member_status: STRING
+        seat_tier: STRING
+        export_date: DATE
+    claude_members_2026_06_23:
+      +column_types:
+        member_name: STRING
+        user_email: STRING
+        member_role: STRING
+        member_status: STRING
+        seat_tier: STRING
+        export_date: DATE
+
 models:
   wingtra_dwh:
     clean:
@@ -26,10 +66,12 @@ models:
         +schema: cl_odoo
       revolut:
         +schema: cl_revolut
+        +tags: ["daily", "finance"]
       external:
         +schema: cl_external
       seeds:
         +schema: cl_seeds
+        +tags: ["daily", "finance"]
     object:
       +materialized: table
       +schema: ol
@@ -37,6 +79,7 @@ models:
         +schema: ol_ops
       finance:
         +schema: ol_finance
+        +tags: ["daily", "finance"]
     business:
       +materialized: table
       +schema: bl
@@ -44,6 +87,7 @@ models:
         +schema: bl_ops
       finance:
         +schema: bl_finance
+        +tags: ["daily", "finance"]
     metadata:
       +materialized: view
       +schema: meta

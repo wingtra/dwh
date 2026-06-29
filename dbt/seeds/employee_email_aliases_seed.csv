@@ -1,0 +1,4 @@
+source_system,alternate_email,canonical_email,canonical_person,mapping_reason
+anthropic_claude,jovan.kucin@wingtra.com,jovan.kucinovski@wingtra.com,Jovan Kucinovski,Claude export email differs from canonical employee email
+anthropic_claude,marina.sanchez@wingtra.com,marina.sanchezvasco@wingtra.com,Marina Sanchez Vasco,Claude export email differs from canonical employee email
+anthropic_claude,gi@wingtra.com,greg.igleharte@wingtra.com,Greg Igleharte Jr.,Claude export email differs from canonical employee email

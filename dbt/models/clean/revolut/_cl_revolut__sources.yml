@@ -1,0 +1,44 @@
+version: 2
+
+sources:
+  - name: dl_revolut
+    database: wingtra-dwh
+    schema: dl_revolut
+    description: Append-only raw Revolut Business API extracts loaded by the dedicated Revolut raw loader. Current-state selection belongs in CL.
+    tables:
+      - name: transactions
+        description: Append-only extraction log with one row per extracted Revolut transaction leg per loader run/page. Includes pending and completed rows so late-completing card payments are not missed.
+        columns:
+          - name: transaction_leg_key
+            tests: [not_null]
+          - name: transaction_id
+            tests: [not_null]
+          - name: created_at
+            tests: [not_null]
+          - name: run_id
+            description: Raw-loader run id that produced the extracted row.
+          - name: extracted_at
+            description: Timestamp when the raw-loader run extracted this row.
+          - name: gcs_uri
+            description: Immutable GCS JSONL object containing the source API response for this row.
+          - name: transaction_raw_json
+            description: Full Revolut transaction JSON response kept for CL/dbt parsing and auditability.
+          - name: leg_raw_json
+            description: Full Revolut transaction leg JSON kept for CL/dbt parsing of counterparty and amount fields.
+      - name: accounts
+        description: Append-only extraction log for Revolut Business accounts.
+        columns:
+          - name: account_id
+            tests: [not_null]
+          - name: run_id
+            description: Raw-loader run id that produced the extracted row.
+          - name: extracted_at
+            description: Timestamp when the raw-loader run extracted this row.
+          - name: gcs_uri
+            description: Immutable GCS JSONL object containing the source API response for this row.
+      - name: _pipeline_runs
+        description: Raw-loader run audit table keyed by run_id.
+      - name: _api_requests
+        description: Raw-loader API request audit table with one row per Revolut API request.
+      - name: _watermarks
+        description: Raw-loader watermark state. This table controls the next extraction window only.

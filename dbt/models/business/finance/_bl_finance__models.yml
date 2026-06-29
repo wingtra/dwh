@@ -1,0 +1,68 @@
+version: 2
+
+models:
+  - name: ai_spend_report
+    description: |
+      Business-layer AI spend report. AI Revolut transactions from
+      `ol_finance.revolut_transactions` pass through where `is_ai_spend` is
+      true, except Marco Schicker's Anthropic payments are excluded. Claude
+      Team licence cost is added separately as one monthly fixed-CHF row per
+      active Claude member from the seed.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: finance
+        layer: bl
+        consumer_type: bi_and_reporting
+        grain: ai_spend_report_row
+    columns:
+      - name: allocation_id
+        description: Stable unique key for one allocated transaction-recipient row.
+        tests: [not_null, unique]
+      - name: transaction_leg_key
+        description: Source OL transaction leg key.
+        tests: [not_null]
+      - name: payer
+        description: |
+          Reporting person for matching and attribution. For Revolut rows this
+          is the original cardholder; for Claude Team licence rows this is the
+          licence holder from the Claude members seed.
+      - name: source_payer
+        description: |
+          Original Revolut cardholder. NULL for synthetic Claude Team licence
+          rows because Marco's Anthropic payments are excluded from this report.
+      - name: allocated_person
+        description: Person receiving the allocated share of the spend.
+        tests: [not_null]
+      - name: allocated_email
+        description: Email of the allocated recipient when available from a source table.
+      - name: allocated_team
+        description: Team receiving the allocated share when known.
+      - name: allocation_weight
+        description: Always 1.0. This table does not use weighted allocations.
+        tests: [not_null]
+      - name: allocated_amount_chf
+        description: |
+          CHF amount used for reporting. For Revolut rows this equals the
+          original transaction amount. For Claude Team licence rows this is a
+          hardcoded CHF 25 for basic seats or CHF 125 for premium seats.
+      - name: subscription_type
+        description: Business-facing subscription or spend type after manual overrides.
+      - name: subscription_tier
+        description: |
+          Business-facing licence tier when applicable, for example
+          `basic` or `premium` for Claude Team licences. NULL for
+          Revolut rows and rows without a known tier.
+      - name: subscription_price_chf
+        description: Fixed CHF seat price used for Claude Team licence rows.
+      - name: allocation_rule
+        description: Rule that produced the allocation row.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - revolut_transaction_passthrough
+                  - claude_team_licence_fixed_chf
+      - name: allocation_basis
+        description: Data source or rationale used for the allocation weight.

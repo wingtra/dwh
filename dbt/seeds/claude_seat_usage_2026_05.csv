@@ -1,0 +1,90 @@
+user_email,account_uuid,product,model,total_requests,total_prompt_tokens,total_completion_tokens,total_net_spend_usd,total_gross_spend_usd,user_id,total_uncached_input_tokens,total_cache_read_tokens,total_cache_write_5m_tokens,total_cache_write_1h_tokens,total_web_search_count,report_period_start,report_period_end
+houston.brautigan@wingtra.com,faf724ff-0abc-46ec-b5fb-38b9eaf0e9f8,Cowork,claude-sonnet-4-6,3698,230280322,2611707,0.0,4.14,user_01XzSJE6FX3Xmg9EzYzMk8AT,251815,220527171,0,9501336,0,2026-05-01,2026-05-31
+jackie.carpenter@wingtra.com,8d732b09-7880-4249-a851-3b9277f3d03f,Chat,claude-sonnet-4-6,424,69231813,433864,0.0,11.21,user_01JU5RrAZPis1o9745dKCVLi,2249,65723742,1226331,2279491,0,2026-05-01,2026-05-31
+nico.berchten@wingtra.com,597e963d-134d-462a-b2c7-6e764bbcf58c,Claude Code,claude-opus-4-7,5979,1461575014,3732645,0.0,4.74,user_01C3y6v3Ej46WfZWUBtH9swh,123687,1413846269,797819,46807239,0,2026-05-01,2026-05-31
+peyton.mccain@wingtra.com,bb02ffa3-8cf3-43a9-8e71-597ee2808bf3,Chat,claude-sonnet-4-6,383,57309785,127052,0.0,1.82,user_01Q6Ps89Rd5j8ZiUi54KPi6W,1704,55003598,242780,2061703,0,2026-05-01,2026-05-31
+jon.allemand@wingtra.com,ce0db76a-9095-4fb2-9711-65cee1a526ee,Chat,claude-sonnet-4-6,117,7361287,161083,0.0,0.81,user_01SSmsoLE6XmsVXtrqmRX5F3,43593,6831299,42109,444286,0,2026-05-01,2026-05-31
+maeli.latouche@wingtra.com,714fc97d-c7b1-4af9-b43a-6c52d1800f1f,Cowork,claude-sonnet-4-6,447,23098281,309957,0.0,0.75,user_01EzYnfQF8Md37yTfbu1gzv2,14628,20599072,0,2484581,0,2026-05-01,2026-05-31
+tomislav.maslac@wingtra.com,661de7e3-0ce0-4352-ae64-c67ba1db08e3,Chat,claude-sonnet-4-6,147,15911941,41664,0.0,2.04,user_01DcNSFAJcvxsg5Rvtyr6FuC,27730,14012676,347866,1523669,0,2026-05-01,2026-05-31
+jasna.samodol@wingtra.com,83520ac8-471a-4296-be28-5ed0ee10b8eb,Cowork,claude-sonnet-4-6,396,43920150,527812,0.0,4.28,user_01HDXfbvRtKfnaVB5VUZ39op,202981,40256494,0,3460675,0,2026-05-01,2026-05-31
+jackie.carpenter@wingtra.com,8d732b09-7880-4249-a851-3b9277f3d03f,Chat,claude-opus-4-7,32,4231193,11035,0.0,3.74,user_01JU5RrAZPis1o9745dKCVLi,190,3310200,519649,401154,0,2026-05-01,2026-05-31
+(org service usage),(org service),(other),,2,0,0,0.0,0.0,,0,0,0,0,0,2026-05-01,2026-05-31
+gi@wingtra.com,0337d46b-29a9-4923-9534-58dbbc088410,Chat,claude-haiku-4-5-20251001,11,103722,1064,0.0,0.0,user_011Q3oAVaJYVPnZbYjJF7z87,22,88182,15518,0,0,2026-05-01,2026-05-31
+gi@wingtra.com,0337d46b-29a9-4923-9534-58dbbc088410,Chat,claude-sonnet-4-6,185,9797238,34753,0.0,0.0,user_011Q3oAVaJYVPnZbYjJF7z87,10084,8930855,0,856299,0,2026-05-01,2026-05-31
+karsten.robbins@wingtra.com,153a513d-8e5b-47ec-84e2-370e2af6d7c1,Chat,claude-sonnet-4-6,296,56059307,102589,0.0,0.0,user_013d33zNnjL6RwiFVfVQrniC,1742,55446891,0,610674,0,2026-05-01,2026-05-31
+karsten.robbins@wingtra.com,153a513d-8e5b-47ec-84e2-370e2af6d7c1,Cowork,claude-haiku-4-5-20251001,2,1089,33,0.0,0.0,user_013d33zNnjL6RwiFVfVQrniC,1089,0,0,0,0,2026-05-01,2026-05-31
+karsten.robbins@wingtra.com,153a513d-8e5b-47ec-84e2-370e2af6d7c1,Cowork,claude-opus-4-7,98,7746270,73633,0.0,0.0,user_013d33zNnjL6RwiFVfVQrniC,172,7444692,0,301406,0,2026-05-01,2026-05-31
+guilherme.vaz@wingtra.com,2132cd22-fd2c-4c62-ae72-8a99ea67f6f6,Chat,claude-opus-4-8,71,9104079,93844,0.0,0.0,user_0156mfmCdyge93UeTvZ81zFP,212,8905694,0,198173,0,2026-05-01,2026-05-31
+guilherme.vaz@wingtra.com,2132cd22-fd2c-4c62-ae72-8a99ea67f6f6,Chat,claude-sonnet-4-6,214,23248682,61057,0.0,0.0,user_0156mfmCdyge93UeTvZ81zFP,1115,22773515,0,474052,0,2026-05-01,2026-05-31
+elias.kleimann@wingtra.com,2fd6ee95-1659-4680-a8a8-d2bb5a042d0e,Chat,claude-sonnet-4-6,17,952326,8325,0.0,0.0,user_016udcTztw93QfAUnpXW5gzy,85,880240,0,72001,0,2026-05-01,2026-05-31
+mohamed.thoraia@wingtra.com,31e57df7-70ec-4d75-8b60-d74420b6c57f,Chat,claude-sonnet-4-6,8,39134,27,0.0,0.0,user_017AN3JW9K13R8zCuPuuEPcr,3,31393,0,7738,0,2026-05-01,2026-05-31
+sven.vanduffelen@wingtra.com,36a55f1b-31ca-40e3-b4e3-9e34aa1320de,Chat,claude-opus-4-7,13,865978,15779,0.0,0.0,user_017kNzx36yBCdu6ih9GzaH7j,80,819677,0,46221,0,2026-05-01,2026-05-31
+sven.vanduffelen@wingtra.com,36a55f1b-31ca-40e3-b4e3-9e34aa1320de,Claude Code,claude-haiku-4-5-20251001,2,832,34,0.0,0.0,user_017kNzx36yBCdu6ih9GzaH7j,832,0,0,0,0,2026-05-01,2026-05-31
+sven.vanduffelen@wingtra.com,36a55f1b-31ca-40e3-b4e3-9e34aa1320de,Claude Code,claude-opus-4-7,98,22355774,62801,0.0,0.0,user_017kNzx36yBCdu6ih9GzaH7j,208,21865856,0,489710,0,2026-05-01,2026-05-31
+sven.vanduffelen@wingtra.com,36a55f1b-31ca-40e3-b4e3-9e34aa1320de,Claude Code,claude-sonnet-4-6,214,15262135,72684,0.0,0.0,user_017kNzx36yBCdu6ih9GzaH7j,282,14994134,0,267719,0,2026-05-01,2026-05-31
+sven.vanduffelen@wingtra.com,36a55f1b-31ca-40e3-b4e3-9e34aa1320de,Cowork,claude-haiku-4-5-20251001,1,430,13,0.0,0.0,user_017kNzx36yBCdu6ih9GzaH7j,430,0,0,0,0,2026-05-01,2026-05-31
+sven.vanduffelen@wingtra.com,36a55f1b-31ca-40e3-b4e3-9e34aa1320de,Cowork,claude-sonnet-4-6,1,30714,26,0.0,0.0,user_017kNzx36yBCdu6ih9GzaH7j,3,20766,0,9945,0,2026-05-01,2026-05-31
+marco.schicker@wingtra.com,39677b35-8e29-4277-b343-673a9a02cd8f,Chat,claude-opus-4-7,6,484435,7159,0.0,0.0,user_01868mykRLsFqgm4HP759xqt,40,426745,0,57650,0,2026-05-01,2026-05-31
+marco.schicker@wingtra.com,39677b35-8e29-4277-b343-673a9a02cd8f,Chat,claude-sonnet-4-6,136,11089627,96264,0.0,0.0,user_01868mykRLsFqgm4HP759xqt,631,10213375,0,875621,0,2026-05-01,2026-05-31
+marco.schicker@wingtra.com,39677b35-8e29-4277-b343-673a9a02cd8f,Claude in Chrome,claude-haiku-4-5-20251001,150,114835,2590,0.0,0.0,user_01868mykRLsFqgm4HP759xqt,114835,0,0,0,0,2026-05-01,2026-05-31
+marco.schicker@wingtra.com,39677b35-8e29-4277-b343-673a9a02cd8f,Claude in Chrome,claude-opus-4-7,78,5592591,72918,0.0,0.0,user_01868mykRLsFqgm4HP759xqt,106480,5308463,177648,0,0,2026-05-01,2026-05-31
+marco.schicker@wingtra.com,39677b35-8e29-4277-b343-673a9a02cd8f,Claude in Chrome,claude-sonnet-4-6,134,7316181,26095,0.0,0.0,user_01868mykRLsFqgm4HP759xqt,60113,7169829,86239,0,0,2026-05-01,2026-05-31
+marina.sanchez@wingtra.com,3f440819-e6b4-4960-b76c-207d06901cf3,Office Agents,claude-opus-4-7,340,43818227,199227,0.0,0.01,user_018p7fEKNb2yscEMXZc9rY7t,403109,40869466,2545652,0,1,2026-05-01,2026-05-31
+alex.overholser@wingtra.com,3fde439e-0e58-4d38-bf20-f69368ffb832,Chat,claude-sonnet-4-6,58,3683853,39098,0.0,0.0,user_018tRviKgb6NHf8JGt6wqTB7,60774,3398279,0,224800,0,2026-05-01,2026-05-31
+steven.rau@wingtra.com,4c3f2770-4fe4-48ef-bcfd-0343879c35ee,Chat,claude-sonnet-4-6,145,13842737,69739,0.0,0.0,user_01AR5xabSQMDbjrcLMkGMby7,643,13270561,0,571533,0,2026-05-01,2026-05-31
+lucille.thomanek@wingtra.com,53f6dd47-ce41-4ca7-8bd0-cb01609a312f,Chat,claude-haiku-4-5-20251001,9,85158,515,0.0,0.0,user_01BNMsBNcTXQv6jS3S4MbT98,27,75398,9733,0,0,2026-05-01,2026-05-31
+lucille.thomanek@wingtra.com,53f6dd47-ce41-4ca7-8bd0-cb01609a312f,Chat,claude-opus-4-7,369,32202219,417094,0.0,0.0,user_01BNMsBNcTXQv6jS3S4MbT98,2278,29818698,0,2381243,0,2026-05-01,2026-05-31
+lucille.thomanek@wingtra.com,53f6dd47-ce41-4ca7-8bd0-cb01609a312f,Chat,claude-opus-4-8,4,292989,2358,0.0,0.0,user_01BNMsBNcTXQv6jS3S4MbT98,12,256779,0,36198,0,2026-05-01,2026-05-31
+lucille.thomanek@wingtra.com,53f6dd47-ce41-4ca7-8bd0-cb01609a312f,Claude Code,claude-haiku-4-5-20251001,278,10498327,70957,0.0,0.45,user_01BNMsBNcTXQv6jS3S4MbT98,521086,9015513,961728,0,45,2026-05-01,2026-05-31
+lucille.thomanek@wingtra.com,53f6dd47-ce41-4ca7-8bd0-cb01609a312f,Claude Code,claude-opus-4-6,1503,172699788,383273,0.0,0.0,user_01BNMsBNcTXQv6jS3S4MbT98,61855,168734580,330657,3572696,0,2026-05-01,2026-05-31
+lucille.thomanek@wingtra.com,53f6dd47-ce41-4ca7-8bd0-cb01609a312f,Claude Code,claude-opus-4-7,5978,1073664366,3491043,0.0,0.0,user_01BNMsBNcTXQv6jS3S4MbT98,228869,1048135728,1599068,23700701,0,2026-05-01,2026-05-31
+lucille.thomanek@wingtra.com,53f6dd47-ce41-4ca7-8bd0-cb01609a312f,Cowork,claude-haiku-4-5-20251001,191,1373414,41027,0.0,0.73,user_01BNMsBNcTXQv6jS3S4MbT98,1010134,9002,343411,10867,73,2026-05-01,2026-05-31
+lucille.thomanek@wingtra.com,53f6dd47-ce41-4ca7-8bd0-cb01609a312f,Cowork,claude-opus-4-7,1019,92358033,903244,0.0,0.0,user_01BNMsBNcTXQv6jS3S4MbT98,24862,85935011,0,6398160,0,2026-05-01,2026-05-31
+nico.berchten@wingtra.com,597e963d-134d-462a-b2c7-6e764bbcf58c,Chat,claude-opus-4-7,213,28333368,474924,0.0,0.0,user_01C3y6v3Ej46WfZWUBtH9swh,5087,24822429,0,3505852,0,2026-05-01,2026-05-31
+nico.berchten@wingtra.com,597e963d-134d-462a-b2c7-6e764bbcf58c,Chat,claude-opus-4-8,13,1266685,34408,0.0,0.0,user_01C3y6v3Ej46WfZWUBtH9swh,40,1043576,0,223069,0,2026-05-01,2026-05-31
+nico.berchten@wingtra.com,597e963d-134d-462a-b2c7-6e764bbcf58c,Claude Code,claude-haiku-4-5-20251001,942,97976777,259627,0.0,0.06,user_01C3y6v3Ej46WfZWUBtH9swh,1175691,92004038,4797048,0,6,2026-05-01,2026-05-31
+nico.berchten@wingtra.com,597e963d-134d-462a-b2c7-6e764bbcf58c,Claude Code,claude-opus-4-8,4,1748118,2430,0.0,0.0,user_01C3y6v3Ej46WfZWUBtH9swh,8,1310064,0,438046,0,2026-05-01,2026-05-31
+nico.berchten@wingtra.com,597e963d-134d-462a-b2c7-6e764bbcf58c,Cowork,claude-haiku-4-5-20251001,1,409,14,0.0,0.0,user_01C3y6v3Ej46WfZWUBtH9swh,409,0,0,0,0,2026-05-01,2026-05-31
+nico.berchten@wingtra.com,597e963d-134d-462a-b2c7-6e764bbcf58c,Cowork,claude-opus-4-7,92,15755219,92548,0.0,0.0,user_01C3y6v3Ej46WfZWUBtH9swh,207,14070107,0,1684905,0,2026-05-01,2026-05-31
+david.perroud@wingtra.com,62fb7b16-21e1-47ea-a239-9fbf103f2a85,Chat,claude-opus-4-6,3,126094,211,0.0,0.0,user_01DDvNaKG6KXzjWr5K7hXJ44,30,97903,0,28161,0,2026-05-01,2026-05-31
+david.perroud@wingtra.com,62fb7b16-21e1-47ea-a239-9fbf103f2a85,Chat,claude-opus-4-7,4,217829,7106,0.0,0.0,user_01DDvNaKG6KXzjWr5K7hXJ44,24,197445,0,20360,0,2026-05-01,2026-05-31
+david.perroud@wingtra.com,62fb7b16-21e1-47ea-a239-9fbf103f2a85,Chat,claude-sonnet-4-6,8,383608,1674,0.0,0.0,user_01DDvNaKG6KXzjWr5K7hXJ44,32,315026,0,68550,0,2026-05-01,2026-05-31
+david.perroud@wingtra.com,62fb7b16-21e1-47ea-a239-9fbf103f2a85,Claude Design,claude-haiku-4-5-20251001,3,282,23,0.0,0.0,user_01DDvNaKG6KXzjWr5K7hXJ44,282,0,0,0,0,2026-05-01,2026-05-31
+david.perroud@wingtra.com,62fb7b16-21e1-47ea-a239-9fbf103f2a85,Claude Design,claude-opus-4-7,90,6554677,142889,0.0,0.0,user_01DDvNaKG6KXzjWr5K7hXJ44,365,6355193,0,199119,0,2026-05-01,2026-05-31
+david.perroud@wingtra.com,62fb7b16-21e1-47ea-a239-9fbf103f2a85,Cowork,claude-haiku-4-5-20251001,2,956,27,0.0,0.0,user_01DDvNaKG6KXzjWr5K7hXJ44,956,0,0,0,0,2026-05-01,2026-05-31
+david.perroud@wingtra.com,62fb7b16-21e1-47ea-a239-9fbf103f2a85,Cowork,claude-opus-4-7,14,627107,4931,0.0,0.0,user_01DDvNaKG6KXzjWr5K7hXJ44,44,505065,0,121998,0,2026-05-01,2026-05-31
+maeli.latouche@wingtra.com,714fc97d-c7b1-4af9-b43a-6c52d1800f1f,Chat,claude-haiku-4-5-20251001,2,16159,315,0.0,0.0,user_01EzYnfQF8Md37yTfbu1gzv2,4,7603,8552,0,0,2026-05-01,2026-05-31
+maeli.latouche@wingtra.com,714fc97d-c7b1-4af9-b43a-6c52d1800f1f,Chat,claude-opus-4-7,95,7785718,47240,0.0,0.0,user_01EzYnfQF8Md37yTfbu1gzv2,594,7090676,0,694448,0,2026-05-01,2026-05-31
+maeli.latouche@wingtra.com,714fc97d-c7b1-4af9-b43a-6c52d1800f1f,Chat,claude-sonnet-4-6,190,22272124,70282,0.0,0.0,user_01EzYnfQF8Md37yTfbu1gzv2,910,21515367,0,755847,0,2026-05-01,2026-05-31
+maeli.latouche@wingtra.com,714fc97d-c7b1-4af9-b43a-6c52d1800f1f,Cowork,claude-haiku-4-5-20251001,126,840758,24594,0.0,0.54,user_01EzYnfQF8Md37yTfbu1gzv2,840758,0,0,0,54,2026-05-01,2026-05-31
+maeli.latouche@wingtra.com,714fc97d-c7b1-4af9-b43a-6c52d1800f1f,Cowork,claude-opus-4-7,152,13252218,192566,0.0,0.0,user_01EzYnfQF8Md37yTfbu1gzv2,1471,11726401,0,1524346,0,2026-05-01,2026-05-31
+maeli.latouche@wingtra.com,714fc97d-c7b1-4af9-b43a-6c52d1800f1f,Voice Mode,claude-haiku-4-5-20251001,13,361227,861,0.0,0.0,user_01EzYnfQF8Md37yTfbu1gzv2,26,310295,50906,0,0,2026-05-01,2026-05-31
+jovan.kucin@wingtra.com,7cd0d0a0-c4e0-4405-990f-731a2067388b,Chat,claude-opus-4-7,9,759174,10243,0.0,0.0,user_01GQwZufpWBM94qwodcSwex2,55,706637,0,52482,0,2026-05-01,2026-05-31
+jovan.kucin@wingtra.com,7cd0d0a0-c4e0-4405-990f-731a2067388b,Chat,claude-opus-4-8,28,2796341,93897,0.0,0.0,user_01GQwZufpWBM94qwodcSwex2,69,2477987,0,318285,0,2026-05-01,2026-05-31
+jovan.kucin@wingtra.com,7cd0d0a0-c4e0-4405-990f-731a2067388b,Chat,claude-sonnet-4-6,6,247396,7593,0.0,0.0,user_01GQwZufpWBM94qwodcSwex2,29,212237,0,35130,0,2026-05-01,2026-05-31
+nina.mueller@wingtra.com,7fe6db2e-1eb8-4c17-bc4d-f984c392a0e0,Chat,claude-sonnet-4-6,18,702770,7218,0.0,0.0,user_01Go3Y62xTGokxxmAxW126Ru,72,630391,0,72307,0,2026-05-01,2026-05-31
+jasna.samodol@wingtra.com,83520ac8-471a-4296-be28-5ed0ee10b8eb,Chat,claude-sonnet-4-6,10,530635,2236,0.0,0.0,user_01HDXfbvRtKfnaVB5VUZ39op,50,501966,0,28619,0,2026-05-01,2026-05-31
+jasna.samodol@wingtra.com,83520ac8-471a-4296-be28-5ed0ee10b8eb,Cowork,claude-haiku-4-5-20251001,91,8363800,84502,0.0,0.0,user_01HDXfbvRtKfnaVB5VUZ39op,46354,7442497,0,874949,0,2026-05-01,2026-05-31
+jasna.samodol@wingtra.com,83520ac8-471a-4296-be28-5ed0ee10b8eb,Cowork,claude-opus-4-7,29,2142006,33526,0.0,0.0,user_01HDXfbvRtKfnaVB5VUZ39op,64,1686862,0,455080,0,2026-05-01,2026-05-31
+jackie.carpenter@wingtra.com,8d732b09-7880-4249-a851-3b9277f3d03f,Chat,claude-haiku-4-5-20251001,231,19296149,133320,0.0,0.0,user_01JU5RrAZPis1o9745dKCVLi,8820,18624091,0,663238,0,2026-05-01,2026-05-31
+jackie.carpenter@wingtra.com,8d732b09-7880-4249-a851-3b9277f3d03f,Chat,claude-opus-4-6,12,1458990,19612,0.0,0.0,user_01JU5RrAZPis1o9745dKCVLi,59,1360698,0,98233,0,2026-05-01,2026-05-31
+peyton.mccain@wingtra.com,bb02ffa3-8cf3-43a9-8e71-597ee2808bf3,Chat,claude-opus-4-8,29,2121225,7459,0.0,0.0,user_01Q6Ps89Rd5j8ZiUi54KPi6W,73,1903009,0,218143,0,2026-05-01,2026-05-31
+jon.allemand@wingtra.com,ce0db76a-9095-4fb2-9711-65cee1a526ee,Chat,claude-haiku-4-5-20251001,13,673070,12261,0.0,0.0,user_01SSmsoLE6XmsVXtrqmRX5F3,319,631137,0,41614,0,2026-05-01,2026-05-31
+jon.allemand@wingtra.com,ce0db76a-9095-4fb2-9711-65cee1a526ee,Chat,claude-opus-4-7,75,3346201,122140,0.0,0.0,user_01SSmsoLE6XmsVXtrqmRX5F3,162332,2884057,106780,193032,0,2026-05-01,2026-05-31
+jon.allemand@wingtra.com,ce0db76a-9095-4fb2-9711-65cee1a526ee,Claude Code,claude-haiku-4-5-20251001,45,1641644,34533,0.0,0.0,user_01SSmsoLE6XmsVXtrqmRX5F3,6006,1352623,125650,157365,0,2026-05-01,2026-05-31
+jon.allemand@wingtra.com,ce0db76a-9095-4fb2-9711-65cee1a526ee,Claude Code,claude-sonnet-4-6,156,12580469,206607,0.0,0.0,user_01SSmsoLE6XmsVXtrqmRX5F3,2492,12040719,136767,400491,0,2026-05-01,2026-05-31
+jon.allemand@wingtra.com,ce0db76a-9095-4fb2-9711-65cee1a526ee,Claude Design,claude-haiku-4-5-20251001,1,177,6,0.0,0.0,user_01SSmsoLE6XmsVXtrqmRX5F3,177,0,0,0,0,2026-05-01,2026-05-31
+jon.allemand@wingtra.com,ce0db76a-9095-4fb2-9711-65cee1a526ee,Claude Design,claude-opus-4-7,49,3507500,31672,0.0,0.0,user_01SSmsoLE6XmsVXtrqmRX5F3,2455,3336423,168622,0,0,2026-05-01,2026-05-31
+ben.snyder@wingtra.com,e1dbe9f6-ebe2-460d-aa42-f7542b48fa78,Chat,claude-sonnet-4-6,15,832148,1982,0.0,0.0,user_01Utd5u6nnXeccBW9cRnNvUF,74,808426,0,23648,0,2026-05-01,2026-05-31
+ben.snyder@wingtra.com,e1dbe9f6-ebe2-460d-aa42-f7542b48fa78,Cowork,claude-haiku-4-5-20251001,9,62026,1478,0.0,0.04,user_01Utd5u6nnXeccBW9cRnNvUF,62026,0,0,0,4,2026-05-01,2026-05-31
+ben.snyder@wingtra.com,e1dbe9f6-ebe2-460d-aa42-f7542b48fa78,Cowork,claude-sonnet-4-6,7,234775,1594,0.0,0.0,user_01Utd5u6nnXeccBW9cRnNvUF,11,194355,0,40409,0,2026-05-01,2026-05-31
+sebastian.busschaert@wingtra.com,ed8a7843-0287-4461-a8fb-bec127a3926d,Chat,claude-sonnet-4-6,27,1516620,8807,0.0,0.0,user_01WLHjyhQTe9Z282QqmvRTMn,134,1357169,0,159317,0,2026-05-01,2026-05-31
+sebastian.busschaert@wingtra.com,ed8a7843-0287-4461-a8fb-bec127a3926d,Claude Code,claude-haiku-4-5-20251001,48,1884517,12637,0.0,0.0,user_01WLHjyhQTe9Z282QqmvRTMn,8482,1724509,151526,0,0,2026-05-01,2026-05-31
+sebastian.busschaert@wingtra.com,ed8a7843-0287-4461-a8fb-bec127a3926d,Claude Code,claude-opus-4-7,129,7957941,69645,0.0,0.0,user_01WLHjyhQTe9Z282QqmvRTMn,331,7640234,0,317376,0,2026-05-01,2026-05-31
+sebastian.busschaert@wingtra.com,ed8a7843-0287-4461-a8fb-bec127a3926d,Claude Code,claude-opus-4-8,5,177252,1990,0.0,0.0,user_01WLHjyhQTe9Z282QqmvRTMn,10,162510,0,14732,0,2026-05-01,2026-05-31
+sebastian.busschaert@wingtra.com,ed8a7843-0287-4461-a8fb-bec127a3926d,Claude Code,claude-sonnet-4-6,2,101034,1268,0.0,0.0,user_01WLHjyhQTe9Z282QqmvRTMn,6,33015,0,68013,0,2026-05-01,2026-05-31
+andrea.illes@wingtra.com,f6dad839-5907-4776-a1a4-841d1a5f1fb2,Chat,claude-sonnet-4-6,30,3323741,19156,0.0,0.0,user_01XUzmknMECTdLFjMZCeJpw3,150,3061335,0,262256,0,2026-05-01,2026-05-31
+houston.brautigan@wingtra.com,faf724ff-0abc-46ec-b5fb-38b9eaf0e9f8,Claude in Chrome,claude-haiku-4-5-20251001,18,156764,1727,0.0,0.0,user_01XzSJE6FX3Xmg9EzYzMk8AT,156764,0,0,0,0,2026-05-01,2026-05-31
+houston.brautigan@wingtra.com,faf724ff-0abc-46ec-b5fb-38b9eaf0e9f8,Cowork,claude-haiku-4-5-20251001,171,554253,3768,0.0,0.0,user_01XzSJE6FX3Xmg9EzYzMk8AT,342471,168650,0,43132,0,2026-05-01,2026-05-31
+houston.brautigan@wingtra.com,faf724ff-0abc-46ec-b5fb-38b9eaf0e9f8,Cowork,claude-opus-4-7,128,13327748,107772,0.0,0.0,user_01XzSJE6FX3Xmg9EzYzMk8AT,218,12802635,0,524895,0,2026-05-01,2026-05-31
+mohamed.thoraia@wingtra.com,31e57df7-70ec-4d75-8b60-d74420b6c57f,Chat,claude-opus-4-7,403,57551846,781787,-0.0,0.0,user_017AN3JW9K13R8zCuPuuEPcr,6966,54318838,351931,2874111,0,2026-05-01,2026-05-31

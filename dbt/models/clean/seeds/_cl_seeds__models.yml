@@ -1,0 +1,112 @@
+version: 2
+
+models:
+  - name: claude_member_snapshots
+    description: |
+      Normalized append-only Anthropic Claude Team member snapshots from
+      dated member export seeds. This CL model canonicalizes source email
+      aliases and standardizes status/tier fields, but does not decide the
+      seat history; that is done in `ol_finance.claude_seats`.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: finance
+        layer: cl
+        source_type: seed
+    columns:
+      - name: user_email
+        description: Canonical Wingtra email for the Claude member.
+        tests: [not_null]
+      - name: source_user_email
+        description: Lowercase email exactly as provided by the Claude members export before alias normalization.
+        tests: [not_null]
+      - name: snapshot_date
+        description: Date the Claude members export was downloaded.
+        tests: [not_null]
+      - name: member_display_name
+        description: Canonical display name from the alias mapping when available, otherwise derived from the email local part.
+        tests: [not_null]
+      - name: member_status
+        description: Membership status from Claude.
+        tests: [not_null]
+      - name: seat_tier
+        description: Lowercase Claude Team seat tier.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['standard', 'premium']
+      - name: is_active_member
+        description: TRUE when member_status is Active.
+        tests: [not_null]
+
+  - name: claude_members
+    description: |
+      Current cleaned Anthropic Claude Team members, sourced from the latest
+      row set in `cl_seeds.claude_member_snapshots`. One row per member with
+      role, status, and seat tier. Active members are the seat population
+      used for Claude Team licence allocation in `bl_finance.ai_spend_report`.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: finance
+        layer: cl
+        source_type: seed
+    columns:
+      - name: user_email
+        description: Canonical Wingtra email for the Claude member. Source export aliases are normalized through `meta.employee_email_aliases`.
+        tests: [not_null, unique]
+      - name: source_user_email
+        description: Lowercase email exactly as provided by the Claude members export before alias normalization.
+        tests: [not_null]
+      - name: member_display_name
+        description: Canonical display name from the alias mapping when available, otherwise derived from the email local part for stable reporting.
+        tests: [not_null]
+      - name: source_member_name
+        description: Display name as exported by Claude; can be a nickname or first name only.
+      - name: member_status
+        description: Membership status from Claude.
+        tests: [not_null]
+      - name: seat_tier
+        description: Lowercase Claude Team seat tier.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['standard', 'premium']
+      - name: is_active_member
+        description: TRUE when member_status is Active.
+        tests: [not_null]
+
+  - name: claude_seat_usage
+    description: |
+      Cleaned Anthropic Claude per-seat usage, sourced from monthly
+      Console spend-report seed exports. One row per (user, product,
+      model, report period). All users are seats on Marco Schicker's
+      Claude Team plan.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: finance
+        layer: cl
+        source_type: seed
+    columns:
+      - name: user_email
+        description: Canonical Wingtra email. Source export aliases are normalized through `meta.employee_email_aliases`.
+        tests: [not_null]
+      - name: source_user_email
+        description: Lowercase email exactly as provided by the Claude usage export before alias normalization.
+      - name: user_id
+        description: |
+          Anthropic-internal user id. NULL on the synthetic
+          `(org service usage)` aggregate row Anthropic emits per report.
+      - name: product
+        description: Anthropic product surface (Chat, Claude Code, Cowork, ...).
+        tests: [not_null]
+      - name: model
+        description: |
+          Claude model name. NULL on the synthetic `(org service usage)`
+          aggregate row.
+      - name: report_period_start
+        description: Inclusive start date of the export window.
+        tests: [not_null]

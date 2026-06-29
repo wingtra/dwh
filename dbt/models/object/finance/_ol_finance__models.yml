@@ -1,0 +1,168 @@
+version: 2
+
+models:
+  - name: claude_seats
+    description: |
+      Object-layer history of Anthropic Claude Team seats. One row per
+      observed member seat-state version. A new version starts when a member
+      first appears in a dated Claude members export, when role/status/seat
+      tier changes, or when the member is absent from a later snapshot and
+      is therefore observed as removed.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: finance
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: claude_member_seat_state_version
+        synonyms: ['claude seats', 'anthropic seats', 'claude licence history']
+    columns:
+      - name: claude_seat_version_id
+        description: Stable unique key for one Claude member seat-state version.
+        tests: [not_null, unique]
+      - name: user_email
+        description: Canonical Wingtra email for the Claude member.
+        tests: [not_null]
+      - name: source_user_email
+        description: Email from the source export before alias canonicalization.
+      - name: valid_from
+        description: First snapshot date where this seat state was observed.
+        tests: [not_null]
+      - name: valid_to
+        description: Day before the next observed state starts. NULL for the current state.
+      - name: is_current
+        description: TRUE for the latest observed state for this user.
+        tests: [not_null]
+      - name: member_display_name
+        description: Reporting display name for the member.
+        tests: [not_null]
+      - name: member_status
+        description: Lowercase observed member status. Uses `removed` when the member is absent from a later snapshot.
+        tests: [not_null]
+      - name: seat_tier
+        description: Lowercase Claude Team seat tier while present. NULL for removed states.
+      - name: is_active_member
+        description: TRUE when the member is present and active in the snapshot state.
+        tests: [not_null]
+      - name: is_present_in_snapshot
+        description: TRUE when the user is present in the source export for this state; FALSE for derived removals.
+        tests: [not_null]
+      - name: seat_change_type
+        description: Added, removed, or the dominant changed attribute that started this state version.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['added', 'removed', 'seat_tier_changed', 'status_changed', 'role_changed', 'unchanged']
+      - name: monthly_licence_price_chf
+        description: Current reporting price for active seats, using fixed CHF values from the AI spend model logic.
+        tests: [not_null]
+
+  - name: revolut_transactions
+    description: |
+      One row per completed Revolut transaction leg from 2026 onward. This is
+      the canonical Revolut transaction fact: it selects the reporting payer
+      and human-readable description from cleaned source fields, applies
+      nullable AI vendor and spend-type classification, joins account and team
+      context, exposes CHF reporting amounts, and flags AI spend with
+      `is_ai_spend`.
+
+      Currency: `total_amount_chf` is converted from `payment_currency`
+      via approximate 2025-2026 static FX rates (USD 0.84, EUR 0.94, GBP
+      1.10). Not accounting-grade - replace with a dated FX table if you
+      need that.
+
+      Excluded by design (low confidence): bare GitHub rows, because
+      the merchant string does not let us distinguish Copilot from other
+      paid GitHub services. Add a dedicated rule only if invoice/admin
+      data proves the spend is Copilot.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: finance
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: revolut_transaction_leg
+        synonyms: ['revolut transactions', 'card spend', 'ai spend', 'llm spend', 'ai subscriptions']
+    columns:
+      - name: transaction_leg_key
+        description: Stable unique key for one Revolut transaction leg.
+        tests: [not_null, unique]
+      - name: transaction_id
+        description: Revolut transaction UUID. Not unique across EXCHANGE legs.
+        tests: [not_null]
+      - name: transaction_date
+        description: Date the transaction completed in Europe/Zurich.
+        tests: [not_null]
+      - name: transaction_month
+        description: First day of the calendar month of `transaction_date`. Useful for monthly roll-ups.
+        tests: [not_null]
+      - name: payer
+        description: Reporting payer selected in OL from the cleaned Revolut cardholder fields.
+      - name: team
+        description: |
+          Reporting team for the Revolut cardholder, joined from the
+          `revolut_cardholder_team_mapping` seed. NULL when the cardholder
+          is not in the manually maintained mapping
+          (past employees or people not surveyed).
+      - name: description
+        description: |
+          Best available human-readable Revolut transaction description,
+          selected in OL from cleaned merchant name, leg description,
+          counterparty description, transaction reference, and transaction
+          description in priority order.
+      - name: account
+        description: Revolut account display name joined from cleaned Revolut accounts.
+      - name: account_currency
+        description: Revolut account currency code.
+      - name: transaction_type
+        description: Revolut transaction category, for example CARD_PAYMENT, TRANSFER, EXCHANGE, TOPUP, or FEE.
+      - name: mcc
+        description: Merchant category code when available from Revolut.
+      - name: ai_category
+        description: Broad product family, either `LLM` or `AI Tool`. NULL when `is_ai_spend` is false.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['LLM', 'AI Tool']
+      - name: ai_product_family
+        description: Same product-family classification as `ai_category`; exposed to make LLM-vs-tool explicit in reports. NULL when `is_ai_spend` is false.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['LLM', 'AI Tool']
+      - name: ai_spend_type
+        description: Subscription/seat, API or usage credits, compute usage, metered overage, credits, or authorization.
+      - name: ai_classification_confidence
+        description: Confidence of the classification (`high` or `medium`).
+      - name: ai_classification_evidence
+        description: Short explanation of the cleaned Revolut evidence used for the OL classification.
+      - name: vendor
+        description: Canonical AI vendor name, for example OpenAI, Anthropic, or Cursor. NULL when `is_ai_spend` is false.
+      - name: subscription_kind
+        description: |
+          Best-guess label for the specific product or plan purchased,
+          derived in OL from the transaction description and amount pattern.
+          Heuristic, not authoritative. NULL when no AI subscription/product
+          classification applies.
+      - name: is_ai_spend
+        description: TRUE when OL classification identifies the transaction as AI or LLM spend.
+        tests: [not_null]
+      - name: orig_amount
+        description: Billed source amount in `orig_currency`.
+      - name: orig_currency
+        description: Currency code for `orig_amount`.
+      - name: amount
+        description: Revolut leg amount in `payment_currency`, before sign flip.
+      - name: payment_currency
+        description: Currency code for `amount` and `fee`.
+      - name: fee
+        description: Revolut fee amount in `payment_currency`.
+      - name: total_amount_chf
+        description: |
+          CHF spend amount, sign-flipped so a purchase is positive and a
+          refund is negative. Rounded to 2 decimal places. Converted from
+          `payment_currency` via approximate static FX rates.
+      - name: source_created_at
+        description: Revolut API transaction created timestamp used as the incremental watermark.
+        tests: [not_null]

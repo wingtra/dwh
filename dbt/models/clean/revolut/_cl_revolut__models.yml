@@ -1,0 +1,93 @@
+version: 2
+
+models:
+  - name: cl_revolut__transactions
+    description: |
+      Cleaned Revolut Business transaction legs from `dl_revolut.transactions`.
+      One latest/current row per Revolut transaction leg selected from the
+      append-only DL extraction log. This model parses source JSON, normalizes
+      timestamps, text, currencies, and numeric fields, and keeps raw JSON for
+      audit. It intentionally contains no AI classification, no account join,
+      no reporting date filter, and no business FX logic.
+    columns:
+      - name: transaction_leg_key
+        description: Stable unique key for one Revolut transaction leg.
+        tests: [not_null, unique]
+      - name: transaction_id
+        description: Revolut transaction UUID. Not unique across EXCHANGE legs.
+        tests: [not_null]
+      - name: leg_id
+        description: Revolut API transaction leg id where available.
+      - name: account_id
+        description: Revolut source account id for the transaction leg.
+      - name: transaction_type
+        description: Revolut transaction category, for example CARD_PAYMENT, TRANSFER, EXCHANGE, TOPUP, or FEE.
+      - name: transaction_state
+        description: Revolut lifecycle state, for example COMPLETED, DECLINED, REVERTED, or PENDING.
+      - name: merchant_name
+        description: Merchant name parsed from the Revolut transaction JSON or loader column.
+      - name: leg_description
+        description: Description from the Revolut transaction leg JSON.
+      - name: counterparty_description
+        description: Counterparty description from the Revolut leg JSON or loader column.
+      - name: transaction_reference
+        description: Transaction reference from the Revolut transaction JSON or loader column.
+      - name: transaction_description
+        description: Transaction-level description from the Revolut transaction JSON.
+      - name: cardholder_name
+        description: Cardholder name parsed from card first and last name fields. Downstream OL decides whether this becomes the reporting payer.
+      - name: completed_date_zurich
+        description: Completion date in Europe/Zurich. NULL when the source transaction has not completed.
+      - name: run_id
+        description: Raw-loader run id for the DL row selected as the current state.
+      - name: extracted_at
+        description: Extraction timestamp for the DL row selected as the current state.
+      - name: gcs_uri
+        description: Immutable GCS JSONL object containing the raw API response for the selected DL row.
+      - name: bill_amount_numeric
+        description: Source billed amount in `bill_currency` as BigQuery NUMERIC.
+      - name: leg_amount
+        description: Source leg amount in `leg_currency`.
+      - name: leg_amount_numeric
+        description: Source leg amount in `leg_currency` as BigQuery NUMERIC.
+      - name: leg_fee
+        description: Source fee amount in `leg_currency`.
+      - name: leg_fee_numeric
+        description: Source fee amount in `leg_currency` as BigQuery NUMERIC.
+      - name: bill_amount
+        description: Source billed amount in `bill_currency`.
+      - name: balance_numeric
+        description: Source balance after the transaction leg as BigQuery NUMERIC.
+      - name: transaction_raw_json
+        description: Full raw Revolut transaction JSON kept for audit and downstream parsing if needed.
+      - name: leg_raw_json
+        description: Full raw Revolut leg JSON kept for audit and downstream parsing if needed.
+      - name: created_at
+        description: Revolut transaction created timestamp.
+        tests: [not_null]
+
+  - name: cl_revolut__accounts
+    description: |
+      Cleaned Revolut Business accounts from `dl_revolut.accounts`. One
+      latest/current row per Revolut account selected from the append-only DL
+      extraction log, with source fields type-normalized and renamed.
+    columns:
+      - name: account_id
+        description: Revolut account id.
+        tests: [not_null, unique]
+      - name: account_name
+        description: Revolut account display name.
+      - name: account_currency
+        description: Revolut account currency code.
+      - name: account_state
+        description: Revolut account lifecycle state.
+      - name: run_id
+        description: Raw-loader run id for the DL row selected as the current state.
+      - name: extracted_at
+        description: Extraction timestamp for the DL row selected as the current state.
+      - name: gcs_uri
+        description: Immutable GCS JSONL object containing the raw API response for the selected DL row.
+      - name: balance_numeric
+        description: Revolut account balance in `account_currency` as BigQuery NUMERIC.
+      - name: balance
+        description: Revolut account balance in `account_currency`.
