@@ -28,6 +28,13 @@ gcloud run jobs add-iam-policy-binding "${TARGET_JOB}" \
   --role="roles/run.invoker" \
   --quiet
 
+gcloud run jobs add-iam-policy-binding "${TARGET_JOB}" \
+  --project="${PROJECT}" \
+  --region="${REGION}" \
+  --member="serviceAccount:${SCHEDULER_SA}" \
+  --role="roles/run.developer" \
+  --quiet
+
 build_run_body() {
   local selector="$1"
 
@@ -58,14 +65,17 @@ upsert_scheduler() {
   local description="$4"
   local message_body
   local action
+  local -a header_args
 
   message_body="$(build_run_body "${selector}")"
 
   if gcloud scheduler jobs describe "${job_name}" \
       --location="${REGION}" --project="${PROJECT}" >/dev/null 2>&1; then
     action="update"
+    header_args=(--update-headers="Content-Type=application/json")
   else
     action="create"
+    header_args=(--headers="Content-Type=application/json")
   fi
 
   gcloud scheduler jobs "${action}" http "${job_name}" \
@@ -77,7 +87,7 @@ upsert_scheduler() {
     --http-method=POST \
     --oauth-service-account-email="${SCHEDULER_SA}" \
     --oauth-token-scope="https://www.googleapis.com/auth/cloud-platform" \
-    --headers="Content-Type=application/json" \
+    "${header_args[@]}" \
     --message-body="${message_body}" \
     --description="${description}"
 

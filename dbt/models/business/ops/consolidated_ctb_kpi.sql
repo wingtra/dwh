@@ -147,6 +147,7 @@ imm as (
         cast(null as float64) as odoo_min_qty,
         cast(null as float64) as odoo_max_qty,
         cast(null as float64) as demand_per_day
+    from (select 1)
     where false
 )
 
