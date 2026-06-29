@@ -8,6 +8,7 @@ This repository separates source ingestion from warehouse modeling.
 pipelines/
   sources/
     odoo/          # independently deployed Odoo ingestion pipeline
+    revolut/       # independently deployed Revolut ingestion pipeline
   shared/          # shared pipeline helpers, added only when duplication is real
 dbt/               # warehouse transformations across landed sources
 ```
