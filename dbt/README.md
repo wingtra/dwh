@@ -37,12 +37,22 @@ Job, and dbt selectors decide which models are included in a given run.
 Default runtime behavior:
 
 ```text
-Cloud Scheduler -> Cloud Run Job dbt-runner -> dbt build --selector scheduled
+Cloud Scheduler -> Cloud Run Job dbt-runner -> dbt build --selector daily
 ```
 
 Use model tags and `selectors.yml` for daily, weekly, and domain-specific
-grouping. Source loaders should only write raw `dl_*` datasets; dbt owns CL,
-OL, BL, tests, and documentation.
+grouping. Scheduler jobs pass the selector as an execution-time override, so
+the same generic Cloud Run Job can run different schedules:
+
+```text
+dbt-runner-daily  -> DBT_SELECTOR=daily
+dbt-runner-weekly -> DBT_SELECTOR=weekly
+```
+
+The `scheduled` selector is a manual catch-up selector for the union of daily
+and weekly resources. Do not use it as the default daily production selector,
+otherwise weekly-tagged work will run every day. Source loaders should only
+write raw `dl_*` datasets; dbt owns CL, OL, BL, tests, and documentation.
 
 Local-only files such as `profiles.yml`, `target/`, `logs/`, and
 `dbt_packages/` must stay out of Git.

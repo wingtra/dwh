@@ -12,7 +12,7 @@ selectors:
       value: weekly
 
   - name: scheduled
-    description: All models intended for scheduled production dbt builds.
+    description: Union of daily and weekly resources for manual catch-up builds. Do not use as the default daily production selector.
     definition:
       union:
         - method: tag
