@@ -1,0 +1,61 @@
+version: 2
+
+models:
+  - name: gsheet_inventory_master_ag
+    description: |
+      Cleaned AG Wingtra Inventory Master. One row per SKU.
+      Source: Inventory Management Master Google Sheet, tab
+      "AG Wingtra INVENTORY MASTER". Empty trailer rows filtered out;
+      numeric/boolean columns SAFE_CAST from text. Cells containing sheet
+      artifacts like '#DIV/0!' become NULL.
+      Source sheet:
+      https://docs.google.com/spreadsheets/d/1NvxoWynZt7p4BSRjN21ewwTAjA1y1tIhDyoEeWqIIWE/edit
+    columns:
+      - name: product_code
+        description: |
+          SKU code as maintained in the master sheet. Matches Odoo
+          product.default_code (product_product.product_code).
+          Primary key in this CL view.
+        tests: [not_null, unique]
+      - name: is_buy_sku
+        description: Derived from can_be_purchased_flag == 'y'.
+        tests: [not_null]
+      - name: demand_per_day
+        description: Per-SKU per-calendar-day demand from the master sheet. May be 0 for SKUs not on the current production plan.
+      - name: lead_time_days
+        description: Replenishment / lead time in days from the master sheet.
+
+  - name: gsheet_spend_categorization
+    description: |
+      Cleaned Spend Categorization 2026 sheet. One row per BUY SKU with
+      Kraljic strategic-sourcing class (`buy_sku_category`), annualised
+      spend in CHF, take rate, and complexity score. Empty trailer rows
+      filtered out; numeric and percent columns SAFE_CAST from text.
+      Source: Spend Categorization 2026 Google Sheet, tab
+      "SpendxComplexity".
+      Source sheet:
+      https://docs.google.com/spreadsheets/d/15BrVj1Ht5SehrzaGY5VtcNZza4RW1690MgbiUsaDsL8/edit
+    columns:
+      - name: product_code
+        description: |
+          SKU code as maintained in the sheet (column "Odoo PN"). Matches
+          Odoo product.default_code (product_product.product_code).
+          Primary key in this CL view.
+        tests: [not_null, unique]
+      - name: buy_sku_category
+        description: |
+          Kraljic strategic-sourcing classification: 'Strategic Alliance',
+          'Leverage Opportunity', 'Bottleneck', or 'Just Buy It'. Derived
+          in the sheet from SPEND ABC and COMPLEXITY SCORE thresholds.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Strategic Alliance', 'Leverage Opportunity', 'Bottleneck', 'Just Buy It']
+      - name: spend_abc
+        description: ABC spend classification ('A', 'B', or 'C').
+      - name: annualised_spend_chf
+        description: Estimated annualised spend in CHF (Annual Drones x take_rate x unit_price_chf).
+      - name: consolidated_take_rate
+        description: Parts per drone, consolidated from the BOM rollup.
+      - name: complexity_score
+        description: Sourcing complexity score (1-10 scale).

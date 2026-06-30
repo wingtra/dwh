@@ -1,0 +1,34 @@
+version: 2
+
+sources:
+  - name: external
+    description: |
+      External / federated raw-data-lake tables. Generic schema for non-dlt
+      sources: Google Sheets read live via BigQuery federation, GCS / BigLake
+      tables, and similar. Table-name convention: `<source_type>_<workbook>_<tab>`
+      (e.g. `gsheet_inventory_master_ag`). All tables here are READ-ONLY
+      from this pipeline's perspective — the underlying sheets/files are
+      maintained externally by their owners.
+    database: wingtra-dwh
+    schema: dl_external
+    tables:
+      - name: gsheet_inventory_master_ag
+        description: |
+          Google Sheets federated table over the Inventory Management Master
+          workbook (`1NvxoWynZt7p4BSRjN21ewwTAjA1y1tIhDyoEeWqIIWE`), tab
+          "AG Wingtra INVENTORY MASTER", skipping the 6 header rows. All 22
+          columns are STRING; type casts happen in
+          cl_external.gsheet_inventory_master_ag.
+          Source sheet:
+          https://docs.google.com/spreadsheets/d/1NvxoWynZt7p4BSRjN21ewwTAjA1y1tIhDyoEeWqIIWE/edit
+      - name: gsheet_spend_categorization
+        description: |
+          Google Sheets federated table over the Spend Categorization 2026
+          workbook (`15BrVj1Ht5SehrzaGY5VtcNZza4RW1690MgbiUsaDsL8`), tab
+          "SpendxComplexity". The table range starts at row 13 (skipping the
+          legend block and header row 12). All 14 columns are STRING; type
+          casts happen in cl_external.gsheet_spend_categorization. Contains
+          the Kraljic strategic-sourcing classification (CATEGORY STRATEGY)
+          per active BUY SKU.
+          Source sheet:
+          https://docs.google.com/spreadsheets/d/15BrVj1Ht5SehrzaGY5VtcNZza4RW1690MgbiUsaDsL8/edit

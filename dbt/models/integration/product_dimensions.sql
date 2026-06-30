@@ -117,7 +117,7 @@ select
     pp.product_code,
     pt.product_name,
     pc.category_full_path                                                        as category_path,
-    cast(null as string)                                                         as buy_sku_category,
+    bsc.buy_sku_category,
     uom.uom_name,
     case pt.product_type
         when 'consu'   then 'Goods'
@@ -154,8 +154,8 @@ select
     ps.supplier_price                                                            as primary_supplier_price,
     ps.supplier_min_order_qty                                                    as primary_supplier_min_order_qty,
     ps.supplier_lead_time_days                                                   as primary_supplier_lead_time_days,
-    cast(null as float64)                                                        as take_rate,
-    cast(null as float64)                                                        as odoo_max_qty
+    tr.take_rate,
+    imm.odoo_max_qty
 
 from {{ ref('product_product') }}        pp
 join {{ ref('product_template') }}       pt   on pt.product_template_id = pp.product_template_id
@@ -168,4 +168,7 @@ left join {{ ref('users') }}                      scm    on scm.user_id    = pt.
 left join {{ ref('wt_product_expert') }}          expert on expert.expert_id = pt.expert_id
 left join bom_outputs                             bo     on bo.product_id  = pp.product_id
 left join bom_components                          bc     on bc.product_id  = pp.product_id
+left join {{ ref('buy_sku_categories') }}         bsc    on bsc.product_code = pp.product_code
+left join {{ ref('take_rates') }}                 tr     on tr.product_code  = pp.product_code
+left join {{ ref('gsheet_inventory_master_ag') }} imm    on imm.product_code = pp.product_code
 where pp.is_active or pp.product_id in (select product_id from referenced_product_ids)

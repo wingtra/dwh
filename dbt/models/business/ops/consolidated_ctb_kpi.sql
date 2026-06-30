@@ -140,15 +140,14 @@ open_pos as (
 ),
 
 imm as (
-    -- Sheet-backed IMM fields are intentionally deferred from the daily Odoo
-    -- runner. Keep the CTE shape so the Metabase-facing contract stays stable.
+    -- R / S / T read directly from IMM. See project_imm_fields_odoo_derivation_check.
     select
-        cast(null as string)  as product_code,
-        cast(null as float64) as odoo_min_qty,
-        cast(null as float64) as odoo_max_qty,
-        cast(null as float64) as demand_per_day
-    from (select 1)
-    where false
+        product_code,
+        odoo_min_qty,
+        odoo_max_qty,
+        demand_per_day
+    from {{ ref('gsheet_inventory_master_ag') }}
+    where product_code is not null
 )
 
 select

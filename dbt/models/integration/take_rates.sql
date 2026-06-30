@@ -1,5 +1,3 @@
-{{ config(enabled=false) }}
-
 /*
     Per-SKU consolidated BOM quantity (a.k.a. take rate). One row per
     product_code where IMM has a non-null take_rate. Used by
