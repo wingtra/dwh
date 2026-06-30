@@ -1,5 +1,3 @@
-{{ config(enabled=false) }}
-
 /*
     Per-SKU planning summary joining the Inventory Master sheet to the Odoo
     product dimension. One row per active BUY SKU that is present in BOTH

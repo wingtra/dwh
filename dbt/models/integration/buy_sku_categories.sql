@@ -1,5 +1,3 @@
-{{ config(enabled=false) }}
-
 /*
     Kraljic strategic-sourcing classification per BUY SKU. One row per
     product_code with a legitimate Kraljic class — rows where either

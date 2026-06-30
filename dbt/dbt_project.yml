@@ -62,6 +62,9 @@ models:
     clean:
       +materialized: view
       +schema: cl
+      external:
+        +schema: cl_external
+        +tags: ["daily", "ops"]
       odoo:
         +schema: cl_odoo
         +tags: ["daily", "odoo", "ops"]
