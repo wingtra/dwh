@@ -1,0 +1,32 @@
+version: 2
+
+sources:
+  - name: hubspot
+    database: "{{ env_var('GCP_PROJECT', 'wingtra-dwh') }}"
+    schema: dl_hubspot
+    description: Raw HubSpot current mirror tables produced by the HubSpot source loader.
+    tables:
+      - name: contacts
+        description: Current raw HubSpot contacts mirror. Historical extracts are in `contacts_extracts`.
+        columns:
+          - name: object_id
+            tests:
+              - not_null
+              - unique
+          - name: _dlt_deleted_at
+      - name: companies
+      - name: deals
+      - name: tickets
+      - name: products
+      - name: line_items
+      - name: quotes
+      - name: association_edges
+
+models:
+  - name: cl_hubspot__contacts
+    description: Typed clean contacts from the HubSpot current mirror.
+    columns:
+      - name: contact_id
+        tests:
+          - not_null
+          - unique
