@@ -77,8 +77,11 @@ infra/odoo_sh_id_ed25519.pub
 
 # Local app / agent config
 .claude/
+.codex/
 docs/.claude/
 CLAUDE.local.md
+AGENT-HANDOVER.md
+CURRENT-ROOT.md
 
 # Scratch / working files
 tmp/
