@@ -604,8 +604,11 @@ Scheduler configuration must be explicit in `infra/setup_scheduler.sh`:
 
 Initial recommendation:
 
-- Daily schedule: `30 5 * * *`
+- Daily schedule: `0 20 * * *`
 - Timezone: `Europe/Zurich`
+- Position: before `odoo-to-bq-daily` at 20:30 Zurich and `dbt-runner-daily`
+  at 22:30 Zurich, so HubSpot changes are transformed by the same evening dbt
+  run instead of waiting for the following day.
 - Cloud Run max retries: start with `2`, then tune after smoke tests
 - Cloud Run timeout: start at 1800 seconds, revisit after smoke/backfill timings
 - Scheduler identity: `hubspot-scheduler@wingtra-dwh.iam.gserviceaccount.com`

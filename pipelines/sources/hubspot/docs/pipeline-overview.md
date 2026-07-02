@@ -73,6 +73,10 @@ Cloud Monitoring email alerts are configured by `infra/setup_monitoring.sh`.
 | Runtime service account | `hubspot-raw-loader@wingtra-dwh.iam.gserviceaccount.com` |
 | Scheduler service account | `hubspot-scheduler@wingtra-dwh.iam.gserviceaccount.com` |
 
+The daily scheduler runs at 20:00 Europe/Zurich. This keeps HubSpot in the same
+evening raw-load window as Odoo and before the 22:30 Europe/Zurich dbt daily
+build.
+
 ## Manual Operations
 
 Trigger a sync:

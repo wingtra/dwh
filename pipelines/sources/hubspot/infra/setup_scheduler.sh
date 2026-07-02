@@ -10,7 +10,7 @@ JOB_NAME="${HUBSPOT_SCHEDULER_JOB_NAME:-hubspot-raw-loader-daily}"
 TARGET_JOB="${HUBSPOT_RAW_LOADER_JOB_NAME:-hubspot-raw-loader}"
 SCHEDULER_SA_NAME="${HUBSPOT_SCHEDULER_SA_NAME:-hubspot-scheduler}"
 SCHEDULER_SA="${SCHEDULER_SA_NAME}@${PROJECT}.iam.gserviceaccount.com"
-SCHEDULE="${HUBSPOT_SCHEDULE:-30 5 * * *}"
+SCHEDULE="${HUBSPOT_SCHEDULE:-0 20 * * *}"
 TIME_ZONE="${HUBSPOT_SCHEDULE_TIME_ZONE:-Europe/Zurich}"
 URI="https://run.googleapis.com/v2/projects/${PROJECT}/locations/${REGION}/jobs/${TARGET_JOB}:run"
 
@@ -33,8 +33,10 @@ gcloud run jobs add-iam-policy-binding "${TARGET_JOB}" \
 if gcloud scheduler jobs describe "${JOB_NAME}" \
     --location="${REGION}" --project="${PROJECT}" >/dev/null 2>&1; then
   action="update"
+  header_flag="--update-headers=Content-Type=application/json"
 else
   action="create"
+  header_flag="--headers=Content-Type=application/json"
 fi
 
 gcloud scheduler jobs "${action}" http "${JOB_NAME}" \
@@ -45,7 +47,7 @@ gcloud scheduler jobs "${action}" http "${JOB_NAME}" \
   --uri="${URI}" \
   --http-method=POST \
   --oauth-service-account-email="${SCHEDULER_SA}" \
-  --headers="Content-Type=application/json" \
+  "${header_flag}" \
   --message-body="{}" \
   --description="Daily HubSpot CRM raw/current load into dl_hubspot"
 
