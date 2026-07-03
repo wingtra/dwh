@@ -109,6 +109,17 @@ else
   echo "Daily dbt scheduler disabled. Set DBT_ENABLE_DAILY_SCHEDULER=true to create it."
 fi
 
+if [[ "${DBT_ENABLE_MORNING_SCHEDULER:-false}" == "true" ]]; then
+  upsert_scheduler \
+    "${DBT_MORNING_SCHEDULER_JOB_NAME:-dbt-runner-daily-morning}" \
+    "${DBT_DAILY_SELECTOR:-daily}" \
+    "${DBT_MORNING_SCHEDULE:-15 6 * * *}" \
+    "Morning catch-up dbt build so overnight loader recoveries reach the modeled layer"
+else
+  echo
+  echo "Morning dbt scheduler disabled. Set DBT_ENABLE_MORNING_SCHEDULER=true to create it."
+fi
+
 if [[ "${DBT_ENABLE_WEEKLY_SCHEDULER:-true}" == "true" ]]; then
   upsert_scheduler \
     "${DBT_WEEKLY_SCHEDULER_JOB_NAME:-dbt-runner-weekly}" \
