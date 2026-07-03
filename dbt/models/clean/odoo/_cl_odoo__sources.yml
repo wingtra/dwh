@@ -14,9 +14,11 @@ sources:
       - name: product_template
       - name: purchase_order
       - name: purchase_order_line
+      - name: res_currency
       - name: res_partner
       - name: res_users
       - name: sale_order
+      - name: sale_order_line
       - name: stock_location
       - name: stock_move
       - name: stock_quant

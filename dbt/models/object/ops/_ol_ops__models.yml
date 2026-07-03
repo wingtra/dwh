@@ -475,3 +475,198 @@ models:
         description: FK to `ol.products` — the part consumed by this line.
       - name: component_qty
         description: How many units of the component are consumed per one execution of the parent BOM.
+
+  - name: sale_orders
+    description: |
+      One row per sale order across all states (draft / sent / sale / cancel). Canonical SO entity:
+      customer resolved to organizations (walking sub-records to the company header), salesperson name
+      resolved, shipment dates (cleared / pickup / arrival), merged-order flags from legacy shipment ids,
+      and physical-goods vs software/service classification derived from order lines. Shipment lead-time
+      KPI math (day counts, 14-day targets, coverage) lives in BL, not here. CEE (company 8) is filtered
+      upstream in CL. Known quirk: `cleared_date` coverage is 88-100% by pickup month (entry gap April
+      2026 onward was backfilled; merged orders never carried it over).
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: sale_order
+        synonyms: ['SO', 'sales order', 'order', 'shipment']
+    columns:
+      - name: sale_order_id
+        description: Primary key. Odoo `sale_order.id`.
+        tests: [not_null, unique]
+      - name: customer_organization_id
+        description: |
+          FK to `ol.organizations` — the customer company header (sub-records walked to parent).
+          Known gap: a handful of individual customers with Odoo portal logins are excluded from
+          `organizations` (its internal-user filter catches portal users too), so this FK dangles
+          for ~11 orders. The relationships test runs at warn severity until organizations
+          distinguishes portal users from internal users.
+        tests:
+          - relationships:
+              arguments:
+                to: ref('organizations')
+                field: organization_id
+              config:
+                severity: warn
+      - name: company_id
+        description: Selling entity. 1 = Wingtra AG, 9 = Wingtra Corp.
+        tests:
+          - accepted_values:
+              arguments:
+                values: [1, 9]
+                quote: false
+      - name: created_at
+        description: SO record creation timestamp.
+      - name: ordered_at
+        description: Order confirmation timestamp (Odoo `date_order`).
+      - name: cleared_date
+        description: Customs clearance date (Odoo custom `date_cleared`). Start of the shipment lead time. NULL for software/service-only orders, most merged orders, and a small entry-lag tail — check coverage before trusting recent weeks.
+      - name: pickup_date
+        description: Date the shipment was picked up. End of the shipment lead time.
+      - name: actual_arrival_date
+        description: Delivery/arrival date. Alternative lead-time endpoint.
+      - name: expected_shipping_date
+        description: Planned ship date from the Odoo shipping workflow.
+      - name: expected_delivery_date
+        description: Planned delivery date from the Odoo shipping workflow.
+      - name: sale_order_name
+        description: SO number shown to users (e.g. S08043).
+      - name: sale_order_state
+        description: Odoo workflow state. `sale` = confirmed.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['draft', 'sent', 'sale', 'cancel']
+      - name: order_type
+        description: Wingtra commercial classification (paid / under_warranty / internal_use / free_material / exception_booking). NULL on older orders.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['paid', 'under_warranty', 'internal_use', 'free_material', 'exception_booking']
+      - name: customer_name
+        description: Customer organization name from `ol.organizations`.
+      - name: salesperson_name
+        description: Salesperson display name via `il.users`.
+      - name: shipment_status
+        description: Wingtra custom shipment workflow status string.
+      - name: delivery_status
+        description: Odoo delivery status of the SO.
+      - name: invoice_status
+        description: Odoo invoicing status of the SO.
+      - name: destination
+        description: Free-text shipping destination from the shipping workflow.
+      - name: legacy_shipment_ids
+        description: Comma-separated legacy shipment ids from the 2025 migration. More than one id = merged SO.
+      - name: amount_total_currency
+        description: ISO 4217 currency code for the amount_* columns.
+      - name: is_confirmed
+        description: True when sale_order_state = 'sale'.
+        tests: [not_null]
+      - name: is_cancelled
+        description: True when sale_order_state = 'cancel'.
+        tests: [not_null]
+      - name: is_merged_order
+        description: True when legacy_shipment_ids holds more than one id — the SO was merged from several legacy shipments and typically lost its clearance date.
+        tests: [not_null]
+      - name: has_physical_goods
+        description: True when at least one line is a physical good (product type Goods, category not Licences/Service). Only these orders physically ship.
+        tests: [not_null]
+      - name: is_software_or_service_only
+        description: True when the order has product lines but none is a physical good. These orders never ship and should be excluded from shipment KPIs.
+        tests: [not_null]
+      - name: is_intercompany_customer
+        description: True when the resolved customer organization is Wingtra Corp. — internal orders, excluded from customer shipment KPIs.
+        tests: [not_null]
+      - name: legacy_shipment_count
+        description: Number of legacy shipment ids on the order (0 when none).
+        tests: [not_null]
+      - name: amount_untaxed
+        description: Order total excl. tax, in amount_total_currency.
+      - name: amount_tax
+        description: Tax amount, in amount_total_currency.
+      - name: amount_total
+        description: Order total incl. tax, in amount_total_currency.
+
+  - name: sale_order_lines
+    description: |
+      One row per sale order product line across all SO states. Display-only rows (line_section /
+      line_note) are excluded. Header info (SO name, state, order timestamp, order type) and product
+      info (code, name, category path) are denormalized so most line-level questions need no extra join.
+      `is_physical_good` marks lines that physically ship (product type Goods, category path not
+      Licences/Service — some software licences are Goods-typed but live in a Licences category).
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: sale_order_line
+        synonyms: ['SO line', 'order line', 'sales order item']
+    columns:
+      - name: sale_order_line_id
+        description: Primary key. Odoo `sale_order_line.id`.
+        tests: [not_null, unique]
+      - name: sale_order_id
+        description: FK to `ol.sale_orders`.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('sale_orders')
+                field: sale_order_id
+      - name: product_id
+        description: FK to `ol.products`.
+        tests: [not_null]
+      - name: customer_organization_id
+        description: FK to `ol.organizations` — customer company header.
+      - name: company_id
+        description: Selling entity. 1 = Wingtra AG, 9 = Wingtra Corp.
+      - name: created_at
+        description: Line creation timestamp.
+      - name: ordered_at
+        description: Order confirmation timestamp of the parent SO.
+      - name: sale_order_name
+        description: Parent SO number (e.g. S08043).
+      - name: sale_order_state
+        description: Parent SO workflow state. `sale` = confirmed.
+      - name: order_type
+        description: Line-level Wingtra commercial classification. Mirrors the header on most orders.
+      - name: customer_name
+        description: Customer organization name.
+      - name: product_code
+        description: SKU / internal reference from `ol.products`.
+      - name: product_name
+        description: Product display name from `ol.products`.
+      - name: product_category_path
+        description: Full category path of the product (e.g. All / Saleable / Licences).
+      - name: line_description
+        description: Line text as printed on the order.
+      - name: price_currency
+        description: ISO 4217 currency code for the price/amount columns.
+      - name: is_downpayment
+        description: True for downpayment lines; they carry amounts but no goods.
+        tests: [not_null]
+      - name: is_delivery
+        description: True for shipping-cost lines added by the carrier integration.
+        tests: [not_null]
+      - name: is_physical_good
+        description: True when the line's product physically ships (type Goods, category not Licences/Service).
+        tests: [not_null]
+      - name: qty_ordered
+        description: Ordered quantity in the line UoM.
+      - name: qty_delivered
+        description: Cumulative delivered quantity.
+      - name: qty_invoiced
+        description: Cumulative invoiced quantity.
+      - name: price_unit
+        description: Unit price before discount, in price_currency.
+      - name: discount_percent
+        description: Line discount in percent (0-100).
+      - name: price_subtotal
+        description: Line total excl. tax after discount, in price_currency.
+      - name: price_total
+        description: Line total incl. tax after discount, in price_currency.

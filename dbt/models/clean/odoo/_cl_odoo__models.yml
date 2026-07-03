@@ -757,3 +757,94 @@ models:
         tests: [not_null, unique]
       - name: expert_name
         description: Display name (plain string, not JSON).
+
+  - name: res_currency
+    description: Cleaned Odoo currencies. One row per currency; `currency_code` is the ISO 4217 code (CHF, EUR, USD, ...).
+    columns:
+      - name: currency_id
+        description: Primary key. Odoo `res_currency.id`.
+        tests: [not_null, unique]
+      - name: currency_code
+        description: ISO 4217 code. Rename of Odoo `name`.
+        tests: [not_null]
+      - name: is_active
+        description: Only active currencies are usable in Odoo; inactive rows kept for historical orders.
+
+  - name: sale_order
+    description: |
+      Cleaned Odoo sale order headers. One row per SO across all states (draft / sent / sale / cancel).
+      Carries Wingtra's custom shipment fields: `cleared_date` (Odoo `date_cleared`, customs clearance),
+      `pickup_date`, `actual_arrival_date`, `order_type`, and `legacy_shipment_ids` (Odoo `legacy_wingtra`).
+      CEE (company_id=8) is filtered out per project policy; AG (1), Corp (9), and NULL-company rows are kept.
+      Known quirk: `cleared_date` had an entry gap from April 2026 (backfilled, but recent months sit at
+      88-100% coverage) and did not carry over for orders merged during the 2025 migration.
+    columns:
+      - name: sale_order_id
+        description: Primary key. Odoo `sale_order.id`.
+        tests: [not_null, unique]
+      - name: customer_partner_id
+        description: FK to res_partner. May point at a sub-record (delivery/invoice contact); OL walks to the company header.
+        tests: [not_null]
+      - name: salesperson_user_id
+        description: FK to res_users. Odoo `user_id`.
+      - name: company_id
+        description: Selling entity. 1 = Wingtra AG, 9 = Wingtra Corp. (8 = CEE is filtered out).
+      - name: currency_id
+        description: FK to res_currency. Order amounts are in this currency.
+      - name: ordered_at
+        description: Order confirmation timestamp. Odoo `date_order`.
+      - name: promised_delivery_at
+        description: Delivery date promised to the customer. Odoo `commitment_date`.
+      - name: first_delivery_at
+        description: Timestamp of the first effective delivery. Odoo `effective_date`.
+      - name: cleared_date
+        description: Customs clearance date (start of the shipment lead time). Odoo custom `date_cleared`. NULL for software/service-only orders, most merged orders, and a small entry-lag tail.
+      - name: pickup_date
+        description: Date the shipment was picked up (end of the shipment lead time). Wingtra custom field.
+      - name: actual_arrival_date
+        description: Delivery/arrival date. Alternative lead-time endpoint used in earlier analyses.
+      - name: sale_order_name
+        description: SO number shown to users (e.g. S08043).
+      - name: sale_order_state
+        description: Odoo workflow state. `sale` = confirmed order.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['draft', 'sent', 'sale', 'cancel']
+      - name: order_type
+        description: Wingtra custom commercial classification. NULL on older orders.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['paid', 'under_warranty', 'internal_use', 'free_material', 'exception_booking']
+      - name: legacy_shipment_ids
+        description: Comma-separated legacy shipment ids from the 2025 migration (Odoo `legacy_wingtra`). More than one id means the SO was merged from several legacy shipments.
+      - name: amount_total
+        description: Order total incl. tax, in `currency_id` currency.
+
+  - name: sale_order_line
+    description: |
+      Cleaned Odoo sale order lines. One row per line, including display-only rows
+      (`display_type` = line_section / line_note) which carry no product; downstream layers filter those.
+      CEE (company_id=8) is filtered out, matching sale_order.
+    columns:
+      - name: sale_order_line_id
+        description: Primary key. Odoo `sale_order_line.id`.
+        tests: [not_null, unique]
+      - name: sale_order_id
+        description: FK to sale_order header. Odoo `order_id`.
+        tests: [not_null]
+      - name: product_id
+        description: FK to product_product. NULL on display-only rows.
+      - name: display_type
+        description: NULL for real product lines; `line_section` / `line_note` for display-only rows.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['line_section', 'line_note']
+      - name: qty_ordered
+        description: Ordered quantity in the line UoM. Odoo `product_uom_qty`.
+      - name: qty_delivered
+        description: Cumulative quantity delivered against this line.
+      - name: discount_percent
+        description: Line discount in percent (0-100). Odoo `discount`.
