@@ -1,0 +1,66 @@
+version: 2
+
+models:
+  - name: arr_by_month_license_type
+    description: |
+      One row per calendar month and license type: monthly recognized
+      recurring revenue three ways — frozen Accruals-sheet snapshot
+      (2026-07-03), DWH replica of the sheet formula on live HubSpot data,
+      and corrected day-prorated method — plus deltas and a plain-language
+      reason for any replica-vs-snapshot difference. ARR columns are the
+      monthly values x 12. Consumed by the "ARR — Sheet vs DWH" Metabase
+      dashboard. Covers the six licence-based types; Cloud and
+      Membership/Training Fees are deal-based and not yet included.
+      Refreshed daily; the snapshot side only changes on an explicit
+      read-only re-export of the sheet.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: revops
+        layer: bl
+        consumer_type: bi_and_reporting
+        grain: month_license_type
+        synonyms: ['ARR by month', 'ARR by license type', 'accruals comparison', 'sheet vs dwh']
+        sample_questions:
+          - 'What is ARR by license type for June 2026?'
+          - 'Where does the DWH differ from the Accruals sheet?'
+          - 'How big is the day-proration method effect per month?'
+        pii: none
+    columns:
+      - name: month_date
+        description: First day of the calendar month.
+        tests: [not_null]
+      - name: snapshot_as_of_date
+        description: As-of date of the frozen sheet snapshot (NULL for months/types absent from the snapshot).
+      - name: license_type_label
+        description: License type label as used in the Accruals sheet and QBR slides.
+        tests: [not_null]
+      - name: replica_vs_snapshot_reason
+        description: Plain-language classification of the replica-vs-snapshot delta (match / data drift / not in snapshot).
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - 'match (within $1 rounding)'
+                  - 'data drift: licences changed in HubSpot after the sheet snapshot was taken'
+                  - 'month or type not present in the 2026-07-03 sheet snapshot'
+      - name: monthly_rr_sheet_snapshot_usd
+        description: Monthly recognized RR (USD) from the frozen sheet matrix snapshot.
+      - name: monthly_rr_replica_usd
+        description: Monthly recognized RR (USD), sheet formula replicated on live HubSpot licences.
+      - name: monthly_rr_day_prorated_usd
+        description: Monthly recognized RR (USD), corrected day-prorated method on live data.
+      - name: delta_replica_vs_snapshot_usd
+        description: Replica minus snapshot; isolates data drift since the snapshot. Near zero proves formula parity.
+      - name: delta_method_usd
+        description: Day-prorated minus replica; isolates the method effect (boundary-month spreading and fallback rounding).
+      - name: arr_sheet_snapshot_usd
+        description: Snapshot monthly RR x 12.
+      - name: arr_replica_usd
+        description: Replica monthly RR x 12.
+      - name: arr_day_prorated_usd
+        description: Day-prorated monthly RR x 12.
+      - name: licence_count
+        description: Distinct licences recognizing in the month (live data).
+    # Grain (month_date x license_type_label) is enforced by the singular
+    # test tests/assert_arr_bl_grain_unique.sql (no dbt_utils in this project).

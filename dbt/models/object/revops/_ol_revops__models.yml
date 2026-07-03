@@ -1,0 +1,114 @@
+version: 2
+
+models:
+  - name: licences
+    description: |
+      One row per licence sold or activated at Wingtra (HubSpot custom object
+      "Licence"). Canonical entity for all licence questions: what it is,
+      which deal and drone it belongs to, its revenue-recognition window,
+      the recurring revenue in source currency and USD (converted at the
+      latest FX rate on or before the start date, matching the Accruals
+      sheet), and data-quality flags. Refreshed daily after the HubSpot
+      loader run. Known quirk: expiration_date_convention documents that
+      HubSpot workflows disagree on the expiry convention (anniversary day
+      vs anniversary minus one day), which distorts month-grid revenue
+      spreading — see arr_licence_months_recognized.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: revops
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: licence
+        synonyms: ['licenses', 'licences sold', 'license base', 'ARR licences']
+        sample_questions:
+          - 'How many active LIDAR licences do we have?'
+          - 'Which licences expire next quarter?'
+          - 'Which licences have the anniversary-day expiration convention?'
+        pii: none
+    columns:
+      - name: licence_id
+        description: HubSpot object id of the licence record. Primary key.
+        tests: [not_null, unique]
+      - name: deal_id
+        description: HubSpot deal id the licence belongs to (join to cl_hubspot deals; carried as a property, not an association).
+      - name: drone_id
+        description: Wingtra drone id the licence is attached to. NULL for licences without a drone.
+      - name: hubspot_owner_id
+        description: HubSpot owner id of the licence record.
+      - name: warranty_service_start_date
+        description: Start of the revenue-recognition window (warranty/service start).
+      - name: warranty_service_expiration_date
+        description: End of the recognition window; for WingtraPilot BLU licences without one, falls back to the BLU end date.
+      - name: activation_date
+        description: Licence activation date.
+      - name: first_drone_configuration_date
+        description: First drone configuration date reported by HubSpot.
+      - name: last_drone_configuration_date
+        description: Last drone configuration date reported by HubSpot.
+      - name: created_at
+        description: HubSpot record creation timestamp (UTC).
+      - name: updated_at
+        description: HubSpot record last-modified timestamp (UTC).
+      - name: licence_type_raw
+        description: Raw HubSpot Type enum value (e.g. "Blue Licence").
+      - name: licence_type_label
+        description: UI label for the licence type; "Blue Licence" is mapped to "WingtraPilot BLU". Matches the Accruals sheet's Type values.
+      - name: licence_type_detail
+        description: Free-text "License Type" property (e.g. "PC Master Perpetual License").
+      - name: sku
+        description: SKU on the licence record where set.
+      - name: deal_name
+        description: Associated deal name (property snapshot).
+      - name: company_from_activation
+        description: Company name captured at activation.
+      - name: associated_company
+        description: Associated company name property.
+      - name: country
+        description: Country of the licence's end user.
+      - name: current_status
+        description: HubSpot current status enum of the licence.
+      - name: billing_frequency
+        description: Billing frequency enum where set.
+      - name: recurring_revenue_currency
+        description: Currency of recurring_revenue_amount_source (USD/EUR/CHF; NULL = unknown).
+      - name: expiration_date_convention
+        description: >
+          Data-quality flag for the recognition window: 'anniversary_minus_1_day'
+          (clean, e.g. 01.07.2026 -> 30.06.2029), 'anniversary_day' (leaky: a
+          12-month term touches 13 calendar months and double-counts the
+          boundary month with its renewal), 'other', or 'missing_dates'.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['anniversary_day', 'anniversary_minus_1_day', 'other', 'missing_dates']
+      - name: is_in_arr_scope
+        description: TRUE when the licence type is one of the six ARR-relevant types and the licence is not excluded from the ARR workflow.
+        tests: [not_null]
+      - name: is_excluded_from_arr_workflow
+        description: TRUE when RevOps flagged the licence to be excluded from the main ARR workflow in HubSpot.
+        tests: [not_null]
+      - name: is_legacy_licence
+        description: TRUE when HubSpot marks the licence as legacy.
+        tests: [not_null]
+      - name: is_recognizing_today
+        description: TRUE when today falls inside the recognition window.
+        tests: [not_null]
+      - name: recurring_revenue_amount_source
+        description: Recurring revenue amount for the full term, in recurring_revenue_currency. Source property is mislabeled "(USD)" in HubSpot.
+      - name: corrected_recurring_revenue_amount_source
+        description: Manual correction property from HubSpot where set; same currency semantics as the source amount. Not used in the sheet replica.
+      - name: fx_rate_to_usd
+        description: FX rate applied (latest rate on or before the start date, from the Accruals sheet's Daily Rates snapshot). 1.0 for USD; NULL for unknown currency.
+      - name: recurring_revenue_amount_usd
+        description: Full-term recurring revenue in USD (source amount x fx_rate_to_usd). NULL when the currency is unknown.
+      - name: term_days
+        description: Days between start and expiration date.
+      - name: term_months_sheet_method
+        description: Months of recognition under the sheet's method (Excel DATEDIF "m" + 1, boundary months inclusive).
+      - name: number_of_billing_cycles
+        description: Number of billing cycles property where set.
+      - name: licence_renewal_count
+        description: Renewal count property where set.
+      - name: licence_validity_years
+        description: Licence validity in years where set.
