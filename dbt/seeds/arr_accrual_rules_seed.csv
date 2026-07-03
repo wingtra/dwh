@@ -1,0 +1,12 @@
+product,hubspot_object,commission_trigger,arr_accrual_rule,is_in_arr
+WingtraCare/TMP,licence,configuration_date,warranty_service_start_manufacturer_logic,True
+PPK License,licence,configuration_date,none,False
+LIDAR,licence,configuration_date,warranty_service_start_eq_configuration,True
+Drone Operating System & Apps,licence,configuration_date,warranty_service_start_eq_configuration,True
+Accidental Damage Protection,licence,configuration_date,none,False
+Second Year Warranty,licence,configuration_date,none,False
+WingtraPilot BLU,licence,configuration_date,warranty_service_start_eq_configuration,True
+WingtraCare BLU,licence,configuration_date,warranty_service_start_manufacturer_logic,True
+Training Fee / Membership fee,deal,none,paid_date,True
+Cloud,deal,entered_payment_pending,license_start_date,True
+Payloads,payload,configuration_date,none,False

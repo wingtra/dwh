@@ -21,6 +21,40 @@ seeds:
   wingtra_dwh:
     +schema: seeds
     +tags: ["weekly", "finance"]
+    arr_fx_daily_rates_seed:
+      +schema: seeds_revops
+      +tags: ["daily", "revops"]
+      +column_types:
+        rate_date: DATE
+        eur_to_usd: FLOAT64
+        chf_to_usd: FLOAT64
+    arr_accrual_rules_seed:
+      +schema: seeds_revops
+      +tags: ["daily", "revops"]
+      +column_types:
+        product: STRING
+        hubspot_object: STRING
+        commission_trigger: STRING
+        arr_accrual_rule: STRING
+        is_in_arr: BOOLEAN
+    arr_sheet_baseline_licences_2026_07_03:
+      +schema: seeds_revops
+      +tags: ["daily", "revops"]
+      +column_types:
+        licence_id: STRING
+        license_type_label: STRING
+        amount_source: FLOAT64
+        deal_currency_code: STRING
+        warranty_service_start_date: DATE
+        warranty_service_expiration_date: DATE
+        license_type_detail: STRING
+    arr_sheet_baseline_matrix_2026_07_03:
+      +schema: seeds_revops
+      +tags: ["daily", "revops"]
+      +column_types:
+        month_date: DATE
+        license_type_label: STRING
+        monthly_recognized_rr_usd: FLOAT64
     claude_seat_usage_2026_05:
       +column_types:
         user_email: STRING
@@ -71,6 +105,9 @@ models:
       revolut:
         +schema: cl_revolut
         +tags: ["weekly", "finance"]
+      hubspot:
+        +schema: cl_hubspot
+        +tags: ["daily", "hubspot", "revops"]
       seeds:
         +schema: cl_seeds
         +tags: ["weekly", "finance"]
@@ -83,6 +120,9 @@ models:
       finance:
         +schema: ol_finance
         +tags: ["weekly", "finance"]
+      revops:
+        +schema: ol_revops
+        +tags: ["daily", "hubspot", "revops"]
     business:
       +materialized: table
       +schema: bl
@@ -92,10 +132,16 @@ models:
       finance:
         +schema: bl_finance
         +tags: ["weekly", "finance"]
+      revops:
+        +schema: bl_revops
+        +tags: ["daily", "hubspot", "revops"]
     integration:
       +materialized: view
       +schema: il_ops
       +tags: ["daily", "odoo", "ops"]
+      revops:
+        +schema: il_revops
+        +tags: ["daily", "hubspot", "revops"]
     metadata:
       +materialized: view
       +schema: meta

@@ -1,0 +1,116 @@
+version: 2
+
+models:
+  - name: arr_fx_daily_rates
+    description: |
+      FX rates for the RevOps ARR accrual logic, one row per rate date, with
+      a valid_until_date for range joins. Read-only snapshot (2026-07-03) of
+      the Accruals sheet's "Daily Rates" tab (Endi's CHF-based finance
+      fixings, pasted irregularly). Accrual logic uses the latest rate on or
+      before the licence start date.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: revops
+        layer: meta
+        consumer_type: internal_reference
+        grain: rate_date
+    columns:
+      - name: rate_date
+        description: Date the rate becomes effective.
+        tests: [not_null, unique]
+      - name: valid_until_date
+        description: Next rate date (exclusive upper bound); NULL for the latest rate.
+      - name: eur_to_usd
+        description: EUR to USD conversion factor.
+        tests: [not_null]
+      - name: chf_to_usd
+        description: CHF to USD conversion factor.
+        tests: [not_null]
+
+  - name: arr_accrual_rules
+    description: |
+      One row per product family: which HubSpot object carries it, what
+      triggers commission, and how ARR accrues. Encodes Stephanie Lambert's
+      guideline table plus Alex Overholser's explanation (2026-07-03 chat).
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: revops
+        layer: meta
+        consumer_type: internal_reference
+        grain: product
+    columns:
+      - name: product
+        description: Product family label.
+        tests: [not_null, unique]
+      - name: hubspot_object
+        description: HubSpot object carrying the product (licence / deal / payload).
+        tests:
+          - accepted_values:
+              values: ['licence', 'deal', 'payload']
+      - name: commission_trigger
+        description: Event that triggers commission for the product.
+      - name: arr_accrual_rule
+        description: Rule for when/how ARR accrues for the product.
+      - name: is_in_arr
+        description: TRUE when the product contributes to reported ARR.
+        tests: [not_null]
+
+  - name: arr_sheet_baseline_matrix
+    description: |
+      One row per month and license type: the Accruals sheet's monthly
+      recognized recurring revenue matrix, frozen from a read-only export on
+      2026-07-03. Validation baseline and dashboard comparison series.
+      Manual re-export only; Drive is never written.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: revops
+        layer: meta
+        consumer_type: internal_reference
+        grain: month_license_type
+    columns:
+      - name: month_date
+        description: First day of the month.
+        tests: [not_null]
+      - name: snapshot_as_of_date
+        description: Date the read-only export was taken.
+        tests: [not_null]
+      - name: license_type_label
+        description: License type label as shown in the sheet matrix.
+        tests: [not_null]
+      - name: monthly_recognized_rr_usd
+        description: Monthly recognized recurring revenue (USD) per the sheet.
+
+  - name: arr_sheet_baseline_licences
+    description: |
+      One row per licence in the Accruals sheet's "ARR Import" tab, frozen
+      from a read-only export on 2026-07-03. Input side of the frozen
+      validation pair (with arr_sheet_baseline_matrix): applying the sheet's
+      formula to these rows must reproduce the matrix.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: revops
+        layer: meta
+        consumer_type: internal_reference
+        grain: licence
+    columns:
+      - name: licence_id
+        description: HubSpot licence object id.
+        tests: [not_null, unique]
+      - name: warranty_service_start_date
+        description: Recognition window start per the sheet snapshot.
+      - name: warranty_service_expiration_date
+        description: Recognition window end per the sheet snapshot.
+      - name: snapshot_as_of_date
+        description: Date the read-only export was taken.
+      - name: license_type_label
+        description: License type label per the sheet snapshot.
+      - name: recurring_revenue_currency
+        description: Deal currency code (USD/EUR/CHF; NULL = unknown).
+      - name: license_type_detail
+        description: Free-text license type detail per the sheet snapshot.
+      - name: recurring_revenue_amount_source
+        description: Full-term recurring revenue amount in the source currency.
