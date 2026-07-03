@@ -21,14 +21,24 @@
 
 with
 
+recognized_items as (
+    select month_date, licence_type_label, licence_id as item_id,
+        monthly_rr_sheet_method_usd, monthly_rr_day_prorated_usd
+    from {{ ref('arr_licence_months_recognized') }}
+    union all
+    select month_date, licence_type_label, line_item_id as item_id,
+        monthly_rr_sheet_method_usd, monthly_rr_day_prorated_usd
+    from {{ ref('arr_cloud_months_recognized') }}
+),
+
 recognized as (
     select
         month_date,
         licence_type_label as license_type_label,
         round(sum(monthly_rr_sheet_method_usd), 2) as monthly_rr_replica_usd,
         round(sum(monthly_rr_day_prorated_usd), 2) as monthly_rr_day_prorated_usd,
-        count(distinct licence_id) as licence_count
-    from {{ ref('arr_licence_months_recognized') }}
+        count(distinct item_id) as licence_count
+    from recognized_items
     group by month_date, license_type_label
 ),
 

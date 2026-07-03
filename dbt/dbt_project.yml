@@ -55,6 +55,19 @@ seeds:
         month_date: DATE
         license_type_label: STRING
         monthly_recognized_rr_usd: FLOAT64
+    arr_cloud_skus_seed:
+      +schema: seeds_revops
+      +tags: ["daily", "revops"]
+      +column_types:
+        sku: STRING
+        term_years: INT64
+    arr_cloud_deal_stages_seed:
+      +schema: seeds_revops
+      +tags: ["daily", "revops"]
+      +column_types:
+        deal_stage_id: STRING
+        stage_label: STRING
+        pipeline_label: STRING
     claude_seat_usage_2026_05:
       +column_types:
         user_email: STRING

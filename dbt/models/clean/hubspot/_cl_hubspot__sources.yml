@@ -48,6 +48,16 @@ models:
         tests:
           - not_null
           - unique
+  - name: cl_hubspot__deals
+    description: Typed clean deals from the HubSpot current mirror. One row per non-deleted deal; amounts in deal currency.
+    columns:
+      - name: deal_id
+        tests: [not_null, unique]
+  - name: cl_hubspot__line_items
+    description: Typed clean line items from the HubSpot current mirror. One row per non-deleted line item; amounts in line-item currency.
+    columns:
+      - name: line_item_id
+        tests: [not_null, unique]
   - name: cl_hubspot__licences
     description: >
       Typed clean licences from the HubSpot current mirror. One row per

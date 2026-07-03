@@ -74,6 +74,10 @@ compared as (
     left join replica r
         on b.month_date = r.month_date
         and b.license_type_label = r.license_type_label
+    -- This gate validates the LICENCE replica only. Cloud is deal-based and
+    -- validated separately (its dates are derived, not from the frozen licence
+    -- baseline).
+    where b.license_type_label != 'Cloud'
 )
 
 select *
