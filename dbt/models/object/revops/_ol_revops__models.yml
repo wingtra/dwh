@@ -112,3 +112,45 @@ models:
         description: Renewal count property where set.
       - name: licence_validity_years
         description: Licence validity in years where set.
+
+  - name: cloud_subscriptions
+    description: |
+      Canonical Cloud subscription entity: one row per qualifying Cloud line
+      item (deal-based recurring revenue, not a Licence custom object).
+      Recognition window, term, and USD amount (start-date FX). Parallel to
+      licences for the Cloud stream. Fees are not yet modelled (recognition
+      dates not stored in HubSpot).
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: revops
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: cloud_subscription
+        synonyms: ['cloud subscriptions', 'wingtracloud', 'cloud arr']
+        pii: none
+    columns:
+      - name: cloud_subscription_id
+        description: Cloud line item id. Primary key.
+        tests: [not_null, unique]
+      - name: deal_id
+        description: HubSpot deal id the subscription belongs to.
+        tests: [not_null]
+      - name: recognition_start_date
+        description: Cloud license start date (recognition window start).
+      - name: recognition_end_date
+        description: Derived end = start + SKU term - 1 day.
+      - name: sku
+        description: Cloud SKU.
+        tests: [not_null]
+      - name: term_years
+        description: Recognition term in years, from the SKU seed.
+      - name: currency
+        description: Line-item (or deal) currency code.
+      - name: is_revenue_bearing
+        description: TRUE when the line amount is > 0 (free SKUs are FALSE).
+        tests: [not_null]
+      - name: amount_source
+        description: Line-item net amount in source currency.
+      - name: amount_usd
+        description: Line-item net amount converted to USD at start-date FX.

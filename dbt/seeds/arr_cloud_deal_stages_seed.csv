@@ -1,0 +1,11 @@
+deal_stage_id,stage_label,pipeline_label
+88315d27-4720-4a48-bc5e-bc913aad50b1,Close Won (=Paid),Direct Sales
+closedwon,Payment Pending (80%),Direct Sales
+4c5b48b4-7c86-4fa2-aac3-9c2a2cf2fca1,Close Won (=Paid),Sales In
+5af76392-2cbe-439b-ab05-fc5a205e9f71,Payment Pending (90%),Sales In
+00445cac-e498-40b9-aaed-29efc91277bc,Close Won (=Paid),[DO NOT USE] Reseller - New Partnerships (sales in)
+528b1fdd-d430-437b-8377-85a34fd63e59,Payment pending (70%),[DO NOT USE] Reseller - New Partnerships (sales in)
+ad4c23b0-4398-45bf-a056-c53d90296f7c,Closed won (100%),[DO NOT USE] Support - Direct
+3e615d45-7668-446c-9a41-3c44cb6bab08,Payment Pending (80%),[DO NOT USE] Support - Direct
+304648f7-81e1-4f7b-9899-f124bb68d8e9,Closed won (100%),[DO NOT USE] Support - Reseller
+8e03abf4-96ff-428c-8f32-ec34c1f68909,Payment Pending (80%),[DO NOT USE] Support - Reseller

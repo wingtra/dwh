@@ -34,3 +34,31 @@ models:
         description: Monthly recognized RR (USD) under the sheet's formula. NULL only outside the sheet-method window.
       - name: monthly_rr_day_prorated_usd
         description: Monthly recognized RR (USD) under day proration. NULL in the expiration month when the sheet method still counts it.
+  - name: arr_cloud_months_recognized
+    description: |
+      Cloud recognized recurring revenue per line item and calendar month,
+      both methods, mirroring arr_licence_months_recognized for the deal-based
+      Cloud stream. Recognition start = deal cloud_license_start_date; end =
+      start + SKU term - 1 day. Inclusion mirrors the "[ACCRUALS] CLOUD"
+      report (cloud SKU allowlist + report deal stages + non-null start).
+      One row per qualifying Cloud line item and calendar month.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: revops
+        layer: il
+        consumer_type: internal_integration
+        grain: cloud_line_item_month
+    columns:
+      - name: line_item_id
+        description: Cloud line item id (FK to ol cloud_subscriptions).
+        tests: [not_null]
+      - name: month_date
+        description: First day of the recognition calendar month.
+        tests: [not_null]
+      - name: licence_type_label
+        description: Always 'Cloud' for this model (unifies with the licence stream in the BL).
+      - name: monthly_rr_sheet_method_usd
+        description: Monthly recognized RR (USD) under the sheet's formula.
+      - name: monthly_rr_day_prorated_usd
+        description: Monthly recognized RR (USD) under day proration.
