@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: arr_licence_months_recognized
+    description: |
+      Private integration model: recognized recurring revenue per licence and
+      calendar month, computed with two methods side by side — the Accruals
+      sheet's month-grid formula (bug-for-bug replica, boundary months
+      inclusive, DATEDIF+1 denominator, start-date FX) and a corrected
+      day-prorated method over the half-open window [start, expiration).
+      One row per in-ARR-scope licence and calendar month touched by its
+      recognition window. Feeds bl arr_by_month_license_type.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: revops
+        layer: il
+        consumer_type: internal_integration
+        grain: licence_month
+    columns:
+      - name: licence_id
+        description: Licence id (FK to ol licences).
+        tests: [not_null]
+      - name: month_date
+        description: First day of the recognition calendar month.
+        tests: [not_null]
+      - name: licence_type_label
+        description: UI licence type label (six ARR-relevant values).
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Drone Operating System & Apps', 'LIDAR', 'Total Maintenance Plan', 'WingtraCare', 'WingtraCare BLU', 'WingtraPilot BLU']
+      - name: monthly_rr_sheet_method_usd
+        description: Monthly recognized RR (USD) under the sheet's formula. NULL only outside the sheet-method window.
+      - name: monthly_rr_day_prorated_usd
+        description: Monthly recognized RR (USD) under day proration. NULL in the expiration month when the sheet method still counts it.
