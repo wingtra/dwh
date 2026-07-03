@@ -57,7 +57,7 @@ HUBSPOT_PAGE_SIZE=${HUBSPOT_PAGE_SIZE},\
 HUBSPOT_RUN_MODE=${HUBSPOT_RUN_MODE}" \
   --task-timeout=1800 \
   --max-retries=2 \
-  --memory=1Gi \
+  --memory=2Gi \
   --cpu=1
 
 echo ""

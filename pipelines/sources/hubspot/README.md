@@ -13,6 +13,11 @@ pipeline.
 ## V1 Scope
 
 - Enabled objects: contacts, companies, deals, products, line items, quotes
+- Enabled custom objects: licences (objectTypeId `2-1022441`, one record per
+  license; source of the RevOps "[Accruals] ARR: Raw Data" report). Requires
+  the `crm.objects.custom.read` scope on the service key. The licence-to-deal
+  link is carried by the `associated_deal_id` property, so no association
+  resource is needed.
 - Deferred object: tickets. HubSpot service keys currently return
   `MISSING_SCOPES` for tickets, so tickets stay in the manifest but are
   excluded from the default scheduled run.
