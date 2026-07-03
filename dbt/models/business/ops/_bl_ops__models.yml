@@ -93,3 +93,103 @@ models:
         description: AB — Sheet's "OHI WEEKS COVERAGE". STRING. oh / (take_rate × 18); emits "Take Rate is Missing in IMM" when take_rate is null.
       - name: part_number
         description: R&D PDM number from `product_template.part_number`. A "/" prefix signals R&D obsolete revision; rows with a `/`-prefix and zero on-hand are filtered out by the scope rule.
+
+  - name: shipment_lead_times
+    description: |
+      One row per confirmed customer sale order with a pickup date (intercompany Wingtra Corp. orders
+      excluded). Consumption mart behind the shipment lead-time dashboard. The KPI (per Janine Jampen's
+      2026-06-30 handover): a shipment is on target when picked up within 14 calendar days of customs
+      clearance (`cleared_date` -> `pickup_date`, calendar days). Orders without a clearance date stay in
+      the model so dashboards can compute coverage; `missing_clearance_reason` explains the gap. Negative
+      lead times are kept but excluded from the on-target flags via `has_valid_lead_time`. Bucket trends
+      by pickup week/month, not clearance week (clearance lags pickups). Refreshed daily after the Odoo
+      raw load.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: bl
+        consumer_type: bi_and_reporting
+        grain: sale_order
+        synonyms: ['shipment lead time', 'cleared to pickup', 'lead time KPI', 'on-time shipment']
+        sample_questions:
+          - What percentage of shipments were picked up within 14 days of clearance this year?
+          - What is the median shipment lead time by pickup week?
+          - Which shipments took longer than 30 days from clearance to pickup?
+          - How many pickups are missing a clearance date, and why?
+    columns:
+      - name: sale_order_id
+        description: Primary key. FK to `ol.sale_orders`.
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('sale_orders')
+                field: sale_order_id
+      - name: customer_organization_id
+        description: FK to `ol.organizations`. NULL/dangling for a few portal-login individuals (see sale_orders).
+      - name: company_id
+        description: Selling entity id. 1 = Wingtra AG, 9 = Wingtra Corp.
+      - name: cleared_date
+        description: Customs clearance date — lead-time start. NULL cases are explained by missing_clearance_reason.
+      - name: pickup_date
+        description: Pickup date — lead-time end. Never NULL (scope filter).
+        tests: [not_null]
+      - name: pickup_week
+        description: Monday-start week of pickup_date. Use for weekly trends.
+      - name: pickup_month
+        description: First day of the pickup month.
+      - name: pickup_year
+        description: Calendar year of pickup_date.
+      - name: sale_order_name
+        description: SO number (e.g. S08043).
+      - name: order_type
+        description: Wingtra commercial classification (paid / under_warranty / internal_use / free_material / exception_booking). NULL on older orders.
+      - name: customer_name
+        description: Customer organization name.
+      - name: selling_entity
+        description: Human-readable selling entity label derived from company_id.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Wingtra AG', 'Wingtra Corp.']
+      - name: destination
+        description: Free-text shipping destination.
+      - name: legacy_shipment_ids
+        description: Comma-separated legacy shipment ids; more than one = merged SO.
+      - name: missing_clearance_reason
+        description: |
+          Why cleared_date is NULL: 'software/service only' (no customs event exists),
+          'merged order (2025 migration)' (date lost in merge), or 'unexplained' (entry lag —
+          worth checking in Odoo). NULL when cleared_date is present.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['software/service only', 'merged order (2025 migration)', 'unexplained']
+      - name: has_physical_goods
+        description: At least one order line is a physical good.
+        tests: [not_null]
+      - name: is_software_or_service_only
+        description: Order has product lines but no physical good. Caution — many Service-category orders (repairs) still ship physically; do not blanket-exclude.
+        tests: [not_null]
+      - name: is_merged_order
+        description: SO merged from several legacy shipments during the 2025 migration.
+        tests: [not_null]
+      - name: has_cleared_date
+        description: cleared_date present. Weekly coverage = share of pickups with this true; below 60% the week's stats are unreliable.
+        tests: [not_null]
+      - name: has_valid_lead_time
+        description: Both dates present and lead time >= 0. The denominator for on-target percentages.
+        tests: [not_null]
+      - name: is_negative_lead_time
+        description: Pickup before clearance — data error, excluded from KPI stats, count reported separately.
+        tests: [not_null]
+      - name: is_within_14_days
+        description: On target — picked up within 14 calendar days of clearance. False when lead time is missing or negative; divide by has_valid_lead_time counts.
+        tests: [not_null]
+      - name: is_within_7_days
+        description: Picked up within 7 calendar days of clearance. Same denominator rule as is_within_14_days.
+        tests: [not_null]
+      - name: lead_time_days
+        description: pickup_date - cleared_date in calendar days. NULL when cleared_date missing; negative on data errors. Prefer median over average — long-tail outliers (100-518 days) inflate averages.
