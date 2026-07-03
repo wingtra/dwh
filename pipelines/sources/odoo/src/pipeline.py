@@ -221,11 +221,19 @@ def _staging_table_names(client: bigquery.Client) -> list[str]:
     ]
 
 
-def _preflight_staging_dataset(client: bigquery.Client, table_names: list[str]) -> None:
+def _preflight_staging_dataset(
+    client: bigquery.Client, table_names: list[str]
+) -> dict[str, str]:
+    failures: dict[str, str] = {}
     for table_name in table_names:
-        staging_table = client.get_table(_table_id(BQ_STAGING_DATASET, table_name))
-        _check_schema_compatible(client, table_name, list(staging_table.schema))
+        try:
+            staging_table = client.get_table(_table_id(BQ_STAGING_DATASET, table_name))
+            _check_schema_compatible(client, table_name, list(staging_table.schema))
+        except Exception as exc:
+            log.exception("Preflight failed for %s", table_name)
+            failures[table_name] = str(exc)
     log.info("Preflighted %d staging table schemas", len(table_names))
+    return failures
 
 
 def _deduped_source_sql(
@@ -341,9 +349,24 @@ def _promote_staging_dataset() -> dict[str, int]:
     client = bigquery.Client(project=GCP_PROJECT, location=BQ_LOCATION)
     promoted: dict[str, int] = {}
     table_names = _staging_table_names(client)
-    _preflight_staging_dataset(client, table_names)
+    failures = _preflight_staging_dataset(client, table_names)
     for table_name in table_names:
-        promoted[table_name] = _promote_table(client, table_name)
+        if table_name in failures:
+            log.warning("Skipping promotion of %s after preflight failure", table_name)
+            continue
+        try:
+            promoted[table_name] = _promote_table(client, table_name)
+        except Exception as exc:
+            log.exception("Promotion failed for %s", table_name)
+            failures[table_name] = str(exc)
+    if failures:
+        summary = "; ".join(
+            f"{name}: {error}" for name, error in sorted(failures.items())
+        )
+        raise RuntimeError(
+            f"Promotion failed for {len(failures)} of {len(table_names)} tables "
+            f"({len(promoted)} promoted): {summary}"
+        )
     return promoted
 
 
