@@ -1,0 +1,13 @@
+# Minimal hygiene checks. Runs on staged files at commit time.
+# Setup: `uv tool install pre-commit && pre-commit install`
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        exclude: ^dbt/(target|dbt_packages)/
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
