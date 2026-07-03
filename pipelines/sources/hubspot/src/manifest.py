@@ -43,6 +43,15 @@ DEFAULT_OBJECT_PROPERTIES = {
         "hubspot_owner_id",
         "createdate",
         "hs_lastmodifieddate",
+        # ARR/accruals rebuild: currency, FX, and license-window properties
+        # used by the RevOps Accruals reports (see dbt dl_hubspot docs).
+        "deal_currency_code",
+        "hs_exchange_rate",
+        "hs_arr",
+        "currency_from_the_license__arr_",
+        "license_expiration_date",
+        "cloud_license_start_date",
+        "tmp_start_date",
     ],
     "tickets": [
         "subject",
@@ -69,6 +78,53 @@ DEFAULT_OBJECT_PROPERTIES = {
         "amount",
         "hs_product_id",
         "createdate",
+        "hs_lastmodifieddate",
+        # ARR/accruals rebuild: SKU snapshot, currency, and recurring-billing
+        # attributes used by the RevOps Accruals reports.
+        "hs_sku",
+        "hs_line_item_currency_code",
+        "recurringbillingfrequency",
+        "hs_recurring_billing_period",
+        "hs_recurring_billing_start_date",
+        "hs_recurring_billing_end_date",
+        "discount",
+        "hs_discount_percentage",
+    ],
+    # Custom object "Licence" (objectTypeId 2-1022441): one record per license,
+    # the source of the "[Accruals] ARR: Raw Data" report. Carries the revenue
+    # recognition window and the USD-converted recurring revenue amount.
+    "licences": [
+        "type",
+        "license_type",
+        "sku",
+        "recurring_revenue_amount_net__usd_",
+        "corrected_recurring_revenue_usd",
+        "billing_frequency",
+        "number_of_billing_cycles",
+        "warranty_service_start_date",
+        "expiration_date",
+        "activation_date",
+        "first_drone_configuration_date",
+        "last_drone_configuration_date",
+        "associated_deal_id",
+        "associated_deal_name",
+        "associated_deal_currency",
+        "associated_drone_id",
+        "company_from_activation",
+        "associated_company",
+        "country",
+        "current_status",
+        "arr_subscription",
+        "trigger_for_recurring_revenue",
+        "exclude_license_from_the_main_arr_workflow",
+        "is_legacy_license",
+        "license_renewal_count",
+        "license_validity__years_",
+        "sales_out_accounted_quarter",
+        "hs_pipeline",
+        "hs_pipeline_stage",
+        "hubspot_owner_id",
+        "hs_createdate",
         "hs_lastmodifieddate",
     ],
     "quotes": [
@@ -180,6 +236,24 @@ V1_OBJECTS: tuple[HubSpotResource, ...] = (
     _object_resource("quotes", "hs_lastmodifieddate"),
 )
 
+# Portal-specific custom object type IDs (HubSpot assigns these per portal).
+LICENCE_OBJECT_TYPE_ID = "2-1022441"
+
+V1_CUSTOM_OBJECTS: tuple[HubSpotResource, ...] = (
+    # Custom object "Licence": search endpoint and properties endpoint must use
+    # the objectTypeId, not the name. Requires the crm.objects.custom.read
+    # scope on the service key.
+    HubSpotResource(
+        name="licences",
+        mode="object",
+        object_type="licences",
+        endpoint=f"/crm/v3/objects/{LICENCE_OBJECT_TYPE_ID}/search",
+        cursor_field="hs_lastmodifieddate",
+        properties=tuple(DEFAULT_OBJECT_PROPERTIES["licences"]),
+        required_scopes=("crm.objects.custom.read",),
+    ),
+)
+
 V1_METADATA: tuple[HubSpotResource, ...] = (
     _metadata_resource("owners", "owners", "/crm/v3/owners"),
     _metadata_resource("pipelines_deals", "deals", "/crm/v3/pipelines/deals"),
@@ -199,6 +273,11 @@ V1_METADATA: tuple[HubSpotResource, ...] = (
         )
         for resource in V1_OBJECTS
     ),
+    _metadata_resource(
+        "properties_licences",
+        "licences",
+        f"/crm/v3/properties/{LICENCE_OBJECT_TYPE_ID}",
+    ),
 )
 
 V1_ASSOCIATIONS: tuple[HubSpotResource, ...] = (
@@ -217,6 +296,7 @@ V1_ASSOCIATIONS: tuple[HubSpotResource, ...] = (
 V1_RESOURCES: tuple[HubSpotResource, ...] = (
     *V1_METADATA,
     *V1_OBJECTS,
+    *V1_CUSTOM_OBJECTS,
     *V1_ASSOCIATIONS,
 )
 
