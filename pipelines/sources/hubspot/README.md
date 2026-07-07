@@ -12,18 +12,21 @@ pipeline.
 
 ## V1 Scope
 
-- Enabled objects: contacts, companies, deals, products, line items, quotes
+- Enabled objects: contacts, companies, deals, tickets, products, line items,
+  quotes
 - Enabled custom objects: licences (objectTypeId `2-1022441`, one record per
   license; source of the RevOps "[Accruals] ARR: Raw Data" report). Requires
   the `crm.objects.custom.read` scope on the service key. The licence-to-deal
   link is carried by the `associated_deal_id` property, so no association
   resource is needed.
-- Deferred object: tickets. HubSpot service keys currently return
-  `MISSING_SCOPES` for tickets, so tickets stay in the manifest but are
-  excluded from the default scheduled run.
+- Enabled custom objects: commissions (objectTypeId `2-53702763`). Requires
+  the `crm.objects.custom.read` scope on the service key. The HubSpot schema
+  does not declare commission associations, so commissions load as standalone
+  custom-object records.
 - Metadata: owners, pipelines, pipeline stages, object schemas, object properties
 - Enabled associations: contact-company, contact-deal, company-deal,
   deal-line item, quote-deal, quote-line item, product-line item
+- Deferred associations: ticket-contact, ticket-company, ticket-deal
 
 ## Auth
 
