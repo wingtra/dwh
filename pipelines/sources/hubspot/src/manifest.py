@@ -58,9 +58,12 @@ DEFAULT_OBJECT_PROPERTIES = {
         "content",
         "hs_pipeline",
         "hs_pipeline_stage",
+        "hs_ticket_category",
+        "hs_ticket_id",
         "hs_ticket_priority",
         "hubspot_owner_id",
         "createdate",
+        "closed_date",
         "hs_lastmodifieddate",
     ],
     "products": [
@@ -127,6 +130,29 @@ DEFAULT_OBJECT_PROPERTIES = {
         "hs_createdate",
         "hs_lastmodifieddate",
     ],
+    # Custom object "Commission" (objectTypeId 2-53702763): RevOps commission
+    # records. The portal schema exposes no object associations, so the object
+    # is loaded as standalone custom-object data.
+    "commissions": [
+        "assigned_reseller",
+        "associated_drone_id",
+        "link_to_item",
+        "no_associated_object",
+        "no_match_in_sheet",
+        "object_type",
+        "quarter",
+        "revops_notes",
+        "sales_out_deal",
+        "sku_revenue",
+        "sku_type",
+        "split_deal",
+        "status",
+        "year",
+        "hubspot_owner_id",
+        "hubspot_team_id",
+        "hs_createdate",
+        "hs_lastmodifieddate",
+    ],
     "quotes": [
         "hs_title",
         "hs_status",
@@ -162,6 +188,11 @@ def _object_resource(
     cursor_field: str,
     enabled: bool = True,
 ) -> HubSpotResource:
+    required_scope = (
+        "tickets"
+        if object_type == "tickets"
+        else f"crm.objects.{object_type}.read"
+    )
     return HubSpotResource(
         name=object_type,
         mode="object",
@@ -169,7 +200,7 @@ def _object_resource(
         endpoint=f"/crm/v3/objects/{object_type}/search",
         cursor_field=cursor_field,
         properties=tuple(DEFAULT_OBJECT_PROPERTIES[object_type]),
-        required_scopes=(f"crm.objects.{object_type}.read",),
+        required_scopes=(required_scope,),
         enabled=enabled,
     )
 
@@ -228,9 +259,7 @@ V1_OBJECTS: tuple[HubSpotResource, ...] = (
     _object_resource("companies", "hs_lastmodifieddate"),
     _object_resource("contacts", "lastmodifieddate"),
     _object_resource("deals", "hs_lastmodifieddate"),
-    # HubSpot service keys currently cannot access tickets; keep the manifest
-    # entry for future OAuth/private-app fallback, but exclude it by default.
-    _object_resource("tickets", "hs_lastmodifieddate", enabled=False),
+    _object_resource("tickets", "hs_lastmodifieddate"),
     _object_resource("products", "hs_lastmodifieddate"),
     _object_resource("line_items", "hs_lastmodifieddate"),
     _object_resource("quotes", "hs_lastmodifieddate"),
@@ -238,6 +267,7 @@ V1_OBJECTS: tuple[HubSpotResource, ...] = (
 
 # Portal-specific custom object type IDs (HubSpot assigns these per portal).
 LICENCE_OBJECT_TYPE_ID = "2-1022441"
+COMMISSION_OBJECT_TYPE_ID = "2-53702763"
 
 V1_CUSTOM_OBJECTS: tuple[HubSpotResource, ...] = (
     # Custom object "Licence": search endpoint and properties endpoint must use
@@ -252,17 +282,21 @@ V1_CUSTOM_OBJECTS: tuple[HubSpotResource, ...] = (
         properties=tuple(DEFAULT_OBJECT_PROPERTIES["licences"]),
         required_scopes=("crm.objects.custom.read",),
     ),
+    HubSpotResource(
+        name="commissions",
+        mode="object",
+        object_type="commissions",
+        endpoint=f"/crm/v3/objects/{COMMISSION_OBJECT_TYPE_ID}/search",
+        cursor_field="hs_lastmodifieddate",
+        properties=tuple(DEFAULT_OBJECT_PROPERTIES["commissions"]),
+        required_scopes=("crm.objects.custom.read",),
+    ),
 )
 
 V1_METADATA: tuple[HubSpotResource, ...] = (
     _metadata_resource("owners", "owners", "/crm/v3/owners"),
     _metadata_resource("pipelines_deals", "deals", "/crm/v3/pipelines/deals"),
-    _metadata_resource(
-        "pipelines_tickets",
-        "tickets",
-        "/crm/v3/pipelines/tickets",
-        enabled=False,
-    ),
+    _metadata_resource("pipelines_tickets", "tickets", "/crm/v3/pipelines/tickets"),
     _metadata_resource("object_schemas", "schemas", "/crm/v3/schemas"),
     *(
         _metadata_resource(
@@ -277,6 +311,11 @@ V1_METADATA: tuple[HubSpotResource, ...] = (
         "properties_licences",
         "licences",
         f"/crm/v3/properties/{LICENCE_OBJECT_TYPE_ID}",
+    ),
+    _metadata_resource(
+        "properties_commissions",
+        "commissions",
+        f"/crm/v3/properties/{COMMISSION_OBJECT_TYPE_ID}",
     ),
 )
 

@@ -24,9 +24,8 @@ explicit `archived` / `archivedAt` evidence or a separate reconciliation run.
 1. Cloud Scheduler invokes Cloud Run Job `hubspot-raw-loader`.
 2. The loader reads the HubSpot service key from Secret Manager.
 3. Metadata resources load first: owners, pipelines, schemas, and properties.
-4. Object resources load next: companies, contacts, deals, products,
-   line items, and quotes. Tickets are present in the manifest but disabled
-   until HubSpot auth supports the required ticket scope.
+4. Object resources load next: companies, contacts, deals, tickets, products,
+   line items, quotes, licences, and commissions.
 5. Association resources load after objects.
 6. Every fetched API page is written to GCS under a run ID and attempt number.
 7. Rows are loaded into per-run BigQuery staging tables.
