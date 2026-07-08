@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "odoo": {
+      "command": "uvx",
+      "args": ["mcp-server-odoo"],
+      "env": {
+        "ODOO_URL": "https://wingtra-18.odoo.com",
+        "ODOO_USER": "${ODOO_USER}",
+        "ODOO_API_KEY": "${ODOO_API_KEY}",
+        "ODOO_DB": "wingtra-test-18-live-19751186",
+        "ODOO_YOLO": "read"
+      }
+    },
+    "metabase": {
+      "type": "http",
+      "url": "https://uproar-knot.metabaseapp.com/api/mcp"
+    },
+    "dbt": {
+      "command": "uvx",
+      "args": ["dbt-mcp"],
+      "env": {
+        "DBT_PROJECT_DIR": "${DWH_ROOT}/dbt",
+        "DBT_PATH": "${DWH_ROOT}/.venv/bin/dbt",
+        "DBT_PROFILES_DIR": "${DWH_ROOT}/dbt",
+        "DBT_MCP_ENABLE_DBT_CLI": "true"
+      }
+    }
+  }
+}
