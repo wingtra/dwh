@@ -127,3 +127,31 @@ seeds:
       - name: export_date
         description: Date the members export was downloaded.
         tests: [not_null]
+
+  - name: claude_members_2026_07_02
+    description: |
+      Anthropic Claude Team members export downloaded on 2026-07-02. One row
+      per member in the Claude admin members list, including role, status, and
+      seat tier.
+
+      Keep dated Claude member exports append-only. `cl_seeds.claude_member_snapshots`
+      unions the dated exports and `ol_finance.claude_seats` derives the
+      observed seat history from them.
+    columns:
+      - name: user_email
+        description: User's Wingtra email from the Claude members export.
+        tests: [not_null, unique]
+      - name: member_name
+        description: Display name from the Claude members export.
+      - name: member_role
+        description: Claude admin role for the member.
+        tests: [not_null]
+      - name: member_status
+        description: Membership status from the Claude admin export.
+        tests: [not_null]
+      - name: seat_tier
+        description: Claude Team seat tier.
+        tests: [not_null]
+      - name: export_date
+        description: Date the members export was downloaded.
+        tests: [not_null]

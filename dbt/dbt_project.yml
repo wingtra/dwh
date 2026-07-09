@@ -103,6 +103,14 @@ seeds:
         member_status: STRING
         seat_tier: STRING
         export_date: DATE
+    claude_members_2026_07_02:
+      +column_types:
+        member_name: STRING
+        user_email: STRING
+        member_role: STRING
+        member_status: STRING
+        seat_tier: STRING
+        export_date: DATE
 
 models:
   wingtra_dwh:

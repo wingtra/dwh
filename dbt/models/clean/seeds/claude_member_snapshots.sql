@@ -12,6 +12,8 @@ source as (
     select * from {{ ref('claude_members_2026_06_18') }}
     union all
     select * from {{ ref('claude_members_2026_06_23') }}
+    union all
+    select * from {{ ref('claude_members_2026_07_02') }}
 ),
 
 normalized as (
