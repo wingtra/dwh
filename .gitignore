@@ -72,9 +72,6 @@ infra/odoo_sh_id_ed25519.pub
 .dlt/secrets.toml
 **/.dlt/secrets.toml
 
-# MCP server config (contains API keys)
-.mcp.json
-
 # Local app / agent config
 .claude/
 .codex/
