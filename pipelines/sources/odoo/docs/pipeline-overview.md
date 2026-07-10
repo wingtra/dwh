@@ -2,174 +2,169 @@
 
 ## Overview
 
-A daily automated pipeline that extracts data from Wingtra's Odoo.sh production instance and loads it into BigQuery for reporting.
+A daily automated pipeline extracts data from Wingtra's Odoo.sh production
+instance and loads it into BigQuery for reporting.
 
 Repository location: `pipelines/sources/odoo/`
 
-```
-                        Odoo.sh (Production)
-                        ┌─────────────────────┐
-                        │  Odoo 18 + Postgres  │
-                        │                      │
-                        │  ~/backup.daily/     │
-                        │    *.sql.gz (2.4 GB) │
-                        └──────────┬───────────┘
-                                   │
-                          1. SSH + SCP (-O flag)
-                             Daily at 18:30 UTC
-                                   │
-                                   ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                     Cloud Run Job: odoo-to-bq                    │
-│                     (16 GiB RAM, 4 vCPU, ephemeral)              │
-│                                                                  │
-│  ┌────────────┐    ┌──────────────┐    ┌───────────────────┐    │
-│  │            │    │              │    │                   │    │
-│  │  2. Fetch  │───>│  3. Restore  │───>│  4. Load (dlt)    │    │
-│  │            │    │              │    │                   │    │
-│  │  SSH key   │    │  Decompress  │    │  Read all tables  │    │
-│  │  from      │    │  .sql.gz     │    │  from local PG    │    │
-│  │  Secret    │    │              │    │                   │    │
-│  │  Manager   │    │  Stream thru │    │  Write staging    │    │
-│  │            │    │  dump filter │    │  then MERGE DL    │    │
-│  │  Download  │    │  (skip mail, │    │                   │    │
-│  │  backup    │    │  attachments,│    │  275 tables       │    │
-│  │  via SCP   │    │  IR tables)  │    │  3.1M rows        │    │
-│  │            │    │              │    │                   │    │
-│  │  Upload to │    │  Pipe into   │    │  Record run in    │    │
-│  │  GCS       │    │  local psql  │    │  _pipeline_runs   │    │
-│  │  (archive) │    │              │    │                   │    │
-│  └────────────┘    └──────────────┘    └───────────────────┘    │
-│         │             │                         │                │
-│         │          ┌──┴──┐                      │                │
-│         │          │ PG  │ (ephemeral,          │                │
-│         │          │ 16  │  inside container,   │                │
-│         │          └─────┘  destroyed on exit)  │                │
-│                                                                  │
-└──────────────────────────────────────────────────────────────────┘
-          │                                       │
-          ▼                                       ▼
-  ┌───────────────┐                     ┌──────────────────┐
-  │ GCS Bucket    │                     │ BigQuery         │
-  │               │                     │                  │
-  │ wingtra-dwh-  │                     │ Dataset: dl_odoo │
-  │ odoo-backups  │                     │                  │
-  │               │                     │ 275 tables       │
-  │ 30-day        │                     │ Upsert promotion │
-  │ retention     │                     │ daily            │
-  └───────────────┘                     └──────────────────┘
-```
+The pipeline keeps current raw tables in `dl_odoo` and, for selected business
+critical tables, also writes mechanical raw SCD2 tables named `<table>_scd`.
 
 ## Step-by-step flow
 
 ### 1. Trigger (Cloud Scheduler)
-- Cron fires daily at 18:30 UTC
-- Sends authenticated HTTP POST to Cloud Run
-- Cloud Run spins up the container
+- Cron fires daily at 18:30 UTC.
+- Sends authenticated HTTP POST to Cloud Run.
+- Cloud Run spins up the container.
 
 ### 2. Fetch backup (`fetch_backup.py`)
-- Reads SSH private key from **Secret Manager**
-- Connects to Odoo.sh via SSH (`19751186@wingtra-18.odoo.com`)
-- Finds newest `.sql.gz` in `~/backup.daily/`
-- Checks backup age (rejects if older than 36 hours)
-- Downloads via **SCP** with `-O` flag (legacy protocol; Odoo.sh doesn't support SFTP)
-- Uploads a copy to **GCS** for archival (30-day retention)
+- Reads SSH private key from Secret Manager.
+- Connects to Odoo.sh via SSH (`19751186@wingtra-18.odoo.com`).
+- Finds newest `.sql.gz` in `~/backup.daily/`.
+- Checks backup age and rejects backups older than 36 hours.
+- Downloads via SCP with `-O` because Odoo.sh does not support SFTP.
+- Uploads a copy to GCS for archival with 30-day retention.
 
 ### 3. Filtered restore (`restore.py` + `dump_filter.py`)
-- Starts **ephemeral Postgres 16** inside the container
-- Decompresses the `.sql.gz` and streams it through the **dump filter**
-- The filter skips COPY blocks for excluded tables and drops selected heavy columns:
-  - `mail_*` (chatter, 1M+ rows of messages/tracking)
-  - `ir_attachment` (binary blobs, 55 MB)
-  - TOAST-heavy quality columns with embedded HTML/images
-  - `ir_*` (technical metadata, UI views, translations)
-  - `bus_*`, `discuss_*`, `digest_*` (real-time/notification noise)
-  - ~107 tables skipped total
-- Schema (CREATE TABLE, indexes) passes through for all tables
-- Filtered SQL piped directly into `psql` for restore
+- Starts ephemeral Postgres 16 inside the container.
+- Decompresses the `.sql.gz` and streams it through the dump filter.
+- Skips noisy, technical, transient, or binary-heavy tables and columns.
+- Pipes the filtered SQL directly into local `psql`.
 
 ### 4. Load to BigQuery (`pipeline.py`)
-- **dlt** connects to local Postgres via Unix socket
-- Auto-discovers all tables in the `public` schema
-- Extracts, normalizes, and loads a complete snapshot into BigQuery dataset `dl_odoo_staging`
-- Promotes staging tables into `dl_odoo` with BigQuery `MERGE`: upsert changed/new rows, clear `_dlt_deleted_at` for rows that reappear, and set `_dlt_deleted_at` for rows absent from the staged snapshot
-- Postgres `numeric` without precision mapped to `Float` via `type_adapter_callback`
-- Writes run metadata to `_pipeline_runs` table (status, duration, errors)
+- dlt connects to the local restored Postgres database.
+- dlt extracts all remaining `public` schema tables into `dl_odoo_staging` with
+  `write_disposition="replace"`.
+- Each staging table is promoted into the current `dl_odoo.<table>` table using
+  BigQuery `MERGE`:
+  - existing rows are updated by primary key (`id` where available)
+  - new rows are inserted
+  - rows absent from the full staging snapshot are marked with `_dlt_deleted_at`
+- For selected tables, the same full staging snapshot is compared to the open
+  row in `dl_odoo.<table>_scd` by primary key and row hash.
 
-### 5. Cleanup
-- Container exits, Postgres data is destroyed
-- No persistent state between runs
+### 5. Selected SCD tables
+
+The current selected SCD set is:
+
+- `crm_lead`
+- `mrp_bom`
+- `mrp_production`
+- `product_category`
+- `product_product`
+- `product_template`
+- `purchase_order`
+- `purchase_order_line`
+- `res_company`
+- `res_partner`
+- `res_users`
+- `sale_order`
+- `sale_order_line`
+- `stock_location`
+- `stock_move`
+- `stock_move_line`
+- `stock_warehouse`
+
+For each selected table:
+
+- `dl_odoo.<table>` is the current raw state.
+- `dl_odoo.<table>_scd` is the raw mechanical SCD2 history.
+
+SCD rows include:
+
+- `_scd_row_hash`
+- `_scd_change_type`: `insert`, `update`, or `delete`
+- `_scd_valid_from`
+- `_scd_valid_to`
+- `_scd_is_current`
+- `_scd_run_id`
+- `_scd_extracted_at`
+
+Current raw records:
+
+```sql
+SELECT *
+FROM `wingtra-dwh.dl_odoo.stock_move`
+WHERE _dlt_deleted_at IS NULL;
+```
+
+Current SCD versions:
+
+```sql
+SELECT *
+FROM `wingtra-dwh.dl_odoo.stock_move_scd`
+WHERE _scd_is_current
+  AND _dlt_deleted_at IS NULL;
+```
+
+Point-in-time SCD version:
+
+```sql
+SELECT *
+FROM `wingtra-dwh.dl_odoo.stock_move_scd`
+WHERE id = 123
+  AND TIMESTAMP('2026-07-01') >= _scd_valid_from
+  AND (_scd_valid_to IS NULL OR TIMESTAMP('2026-07-01') < _scd_valid_to);
+```
+
+### 6. Cleanup
+- Container exits.
+- The in-container Postgres data is destroyed.
+- No persistent local state is kept between runs.
 
 ## What gets excluded (and why)
 
 | Category | Example tables | Why excluded |
 |---|---|---|
-| Attachments | `ir_attachment` | Binary blobs, 55 MB, not useful for analytics |
-| Mail/Chatter | `mail_message`, `mail_followers`, `mail_tracking_value` | 1M+ rows of notification noise |
-| Quality TOAST columns | Selected columns on `quality_check`, `quality_alert`, `quality_point` | Embedded HTML/images that caused TOAST bloat; table row metadata remains included |
+| Attachments | `ir_attachment` | Binary blobs, not useful for analytics |
+| Mail/Chatter | `mail_message`, `mail_followers`, `mail_tracking_value` | High-volume notification noise |
+| Quality TOAST columns | Selected columns on `quality_check`, `quality_alert`, `quality_point` | Embedded images and long-form HTML/text |
 | IR Technical | `ir_model_*`, `ir_ui_*`, `ir_act_*`, `ir_translation` | Odoo internals, UI definitions, translations |
 | Real-time | `bus_bus`, `bus_presence`, `discuss_*` | Ephemeral messaging state |
 | Wizards | `base_import_*`, `change_password_*`, `*_wizard*` | Transient UI state |
-
-## What gets included
-
-Everything not in the EXCLUDE list. Key business tables:
-
-| Domain | Tables | Example row counts |
-|---|---|---|
-| Inventory | `stock_move`, `stock_move_line`, `stock_quant`, `stock_lot` | 529K, 580K, 137K, 91K |
-| Valuation | `stock_valuation_layer` | 439K |
-| Purchasing | `purchase_order`, `purchase_order_line`, `purchase_product_price` | 4.6K, 9.2K, 266K |
-| Sales | `sale_order`, `sale_order_line` | 6.2K, 20.6K |
-| Manufacturing | `mrp_production`, `mrp_workorder`, `mrp_bom` | 32.3K, 38.9K, 850 |
-| Quality | `quality_reason`, `quality_tag`, `quality_alert_team` | 742, 29, 3 |
-| CRM | `crm_lead` | 14.5K |
-| Partners | `res_partner`, `res_company`, `res_users` | 25.5K, 3, 149 |
-| Accounting | `account_move`, `account_move_line` | 3.5K, 15.7K |
-| Wingtra custom | `wt_hs_code`, `wt_product_revision`, `wt_product_expert` | 374, 151, 55 |
 
 ## GCP resources
 
 | Resource | Name | Purpose |
 |---|---|---|
-| Cloud Run Job | `odoo-to-bq` | Runs the pipeline (16 GiB, 4 vCPU) |
+| Cloud Run Job | `odoo-to-bq` | Runs the pipeline |
 | Cloud Scheduler | `odoo-to-bq-daily` | Triggers daily at 18:30 UTC |
-| GCS Bucket | `wingtra-dwh-odoo-backups` | Backup archive (30-day retention) |
-| BigQuery Dataset | `dl_odoo` | Target dataset (europe-west1) |
-| BigQuery Dataset | `dl_odoo_staging` | Staging dataset used before upsert promotion |
+| GCS Bucket | `wingtra-dwh-odoo-backups` | Backup archive |
+| BigQuery Dataset | `dl_odoo` | Current raw and selected SCD tables |
+| BigQuery Dataset | `dl_odoo_staging` | Full daily staging snapshot and temporary SCD change tables |
 | Artifact Registry | `odoo-pipeline` | Docker image storage |
 | Secret Manager | `odoo-sh-ssh-key` | SSH private key for Odoo.sh |
-| Service Account | `odoo-pipeline@wingtra-dwh` | Pipeline identity with scoped BigQuery, Storage, Secret Manager, and Run permissions |
-
-## Costs
-
-Effectively free under GCP free tier for a single daily run (~28 min).
-If free tier is exhausted: ~$2.50/month for Cloud Run compute.
-GCS + BigQuery storage: pennies.
+| Service Account | `odoo-pipeline@wingtra-dwh` | Pipeline runtime identity |
 
 ## Manual operations
 
-**Trigger a sync:**
+Trigger a sync:
+
 ```bash
 gcloud run jobs execute odoo-to-bq --region=europe-west1 --project=wingtra-dwh
 ```
 
-**Check last run status:**
+Check last run status:
+
 ```sql
-SELECT * FROM `wingtra-dwh.dl_odoo._pipeline_runs`
-ORDER BY started_at DESC LIMIT 5
+SELECT *
+FROM `wingtra-dwh.dl_odoo._pipeline_runs`
+ORDER BY started_at DESC
+LIMIT 5;
 ```
 
-**Find rows no longer present in the latest Odoo snapshot:**
+Find rows no longer present in the latest Odoo snapshot:
+
 ```sql
 SELECT *
 FROM `wingtra-dwh.dl_odoo.stock_move`
 WHERE _dlt_deleted_at IS NOT NULL
 ORDER BY _dlt_deleted_at DESC
-LIMIT 20
+LIMIT 20;
 ```
 
-**View logs:**
+View logs:
+
 ```bash
 gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=odoo-to-bq" \
   --project=wingtra-dwh --limit=20 --format="value(textPayload)" --freshness=1h
