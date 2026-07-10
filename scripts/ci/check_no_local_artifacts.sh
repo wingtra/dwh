@@ -3,7 +3,6 @@ set -euo pipefail
 
 blocked_paths=(
   ".env"
-  ".mcp.json"
   ".obsidian"
   ".claude"
   "tmp"
@@ -16,6 +15,19 @@ for path in "${blocked_paths[@]}"; do
     exit 1
   fi
 done
+
+# The root .mcp.json is a repo-owned MCP manifest. Local/untracked copies and
+# nested MCP configs are still treated as workstation artifacts.
+if [[ -e ".mcp.json" ]] && ! git ls-files --error-unmatch -- ".mcp.json" >/dev/null 2>&1; then
+  echo "Blocked local artifact found: .mcp.json" >&2
+  exit 1
+fi
+
+while IFS= read -r mcp_file; do
+  [[ "${mcp_file}" == "./.mcp.json" ]] && continue
+  echo "Blocked local artifact found: ${mcp_file#./}" >&2
+  exit 1
+done < <(find . -path ./.git -prune -o -name ".mcp.json" -print)
 
 blocked_patterns=(
   "*.pem"

@@ -6,6 +6,8 @@ Use dbt for transformations that clean, conform, combine, test, and publish
 landed raw data from Odoo, Revolut, HubSpot, and future sources. Do not put
 source-specific extraction or deployment code here.
 
+Agents editing dbt models must follow [AGENTS.md](AGENTS.md).
+
 ## Layers
 
 The warehouse layers are:
