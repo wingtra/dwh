@@ -1,9 +1,9 @@
-"""HubSpot CRM -> GCS raw pages -> BigQuery DL current mirrors.
+"""HubSpot CRM -> GCS raw pages -> BigQuery DL current and SCD tables.
 
-The daily path is intentionally small:
-fetch pages, archive raw evidence, stage rows, append extracts, MERGE current,
-then advance the per-resource watermark. Missing from an incremental response
-is never treated as deletion evidence.
+For loaded object resources the pipeline performs full object reads, stages the
+observed source set, maintains a current raw mirror, and writes mechanical raw
+SCD2 versions to ``<resource>_scd``. This avoids relying on HubSpot modified
+timestamps for change capture.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def schema_field(name: str, field_type: str, mode: str = "NULLABLE") -> Any:
         return {"name": name, "type": field_type, "mode": mode}
     return bigquery.SchemaField(name, field_type, mode=mode)
 
-from src.load_semantics import (
+from src.load_semantics import (  # noqa: E402
     dedupe_current_rows,
     deletion_values,
     isoformat_utc,
@@ -49,7 +49,7 @@ from src.load_semantics import (
     sanitized_params,
     source_updated_at,
 )
-from src.manifest import HubSpotResource, V1_RESOURCES, manifest_by_name
+from src.manifest import HubSpotResource, V1_RESOURCES, manifest_by_name  # noqa: E402
 
 
 logging.basicConfig(
@@ -79,22 +79,6 @@ CURRENT_SCHEMA = [
     schema_field("_dlt_deleted_at", "TIMESTAMP"),
 ]
 
-EXTRACT_SCHEMA = [
-    schema_field("run_id", "STRING", mode="REQUIRED"),
-    schema_field("attempt", "INT64", mode="REQUIRED"),
-    schema_field("extracted_at", "TIMESTAMP", mode="REQUIRED"),
-    schema_field("object_type", "STRING", mode="REQUIRED"),
-    schema_field("object_id", "STRING", mode="REQUIRED"),
-    schema_field("created_at", "TIMESTAMP"),
-    schema_field("updated_at", "TIMESTAMP"),
-    schema_field("archived", "BOOL"),
-    schema_field("archived_at", "TIMESTAMP"),
-    schema_field("properties_json", "JSON"),
-    schema_field("raw_json", "JSON"),
-    schema_field("gcs_uri", "STRING", mode="REQUIRED"),
-    schema_field("loaded_at", "TIMESTAMP", mode="REQUIRED"),
-]
-
 ASSOCIATION_CURRENT_SCHEMA = [
     schema_field("from_object_type", "STRING", mode="REQUIRED"),
     schema_field("from_object_id", "STRING", mode="REQUIRED"),
@@ -112,13 +96,18 @@ ASSOCIATION_CURRENT_SCHEMA = [
     schema_field("_dlt_deleted_at", "TIMESTAMP"),
 ]
 
-ASSOCIATION_EXTRACT_SCHEMA = [
-    schema_field("run_id", "STRING", mode="REQUIRED"),
-    schema_field("attempt", "INT64", mode="REQUIRED"),
-    schema_field("extracted_at", "TIMESTAMP", mode="REQUIRED"),
-    *ASSOCIATION_CURRENT_SCHEMA,
-    schema_field("gcs_uri", "STRING", mode="REQUIRED"),
+SCD_FIELDS = [
+    schema_field("_scd_row_hash", "STRING"),
+    schema_field("_scd_change_type", "STRING"),
+    schema_field("_scd_valid_from", "TIMESTAMP"),
+    schema_field("_scd_valid_to", "TIMESTAMP"),
+    schema_field("_scd_is_current", "BOOL"),
+    schema_field("_scd_run_id", "STRING"),
+    schema_field("_scd_extracted_at", "TIMESTAMP"),
 ]
+
+OBJECT_SCD_SCHEMA = [*CURRENT_SCHEMA, *SCD_FIELDS]
+ASSOCIATION_SCD_SCHEMA = [*ASSOCIATION_CURRENT_SCHEMA, *SCD_FIELDS]
 
 WATERMARKS_SCHEMA = [
     schema_field("resource_type", "STRING", mode="REQUIRED"),
@@ -156,6 +145,22 @@ PIPELINE_RUNS_SCHEMA = [
     schema_field("resource_status_json", "JSON"),
     schema_field("error_message", "STRING"),
 ]
+
+OBJECT_HASH_EXCLUDE_COLUMNS = {
+    "first_seen_at",
+    "last_seen_at",
+    "last_run_id",
+    "last_gcs_uri",
+    "loaded_at",
+    "_dlt_synced_at",
+}
+ASSOCIATION_HASH_EXCLUDE_COLUMNS = {
+    "first_seen_at",
+    "last_seen_at",
+    "last_run_id",
+    "loaded_at",
+    "_dlt_synced_at",
+}
 
 
 @dataclass(frozen=True)
@@ -199,7 +204,7 @@ class Config:
             lookback_days=int(os.environ.get("HUBSPOT_LOOKBACK_DAYS", "14")),
             page_size=int(os.environ.get("HUBSPOT_PAGE_SIZE", "200")),
             attempt=int(os.environ.get("HUBSPOT_RUN_ATTEMPT", "1")),
-            mode=os.environ.get("HUBSPOT_RUN_MODE", "incremental"),
+            mode=os.environ.get("HUBSPOT_RUN_MODE", "full"),
             object_filter=os.environ.get("HUBSPOT_OBJECT_FILTER") or None,
             dry_run=os.environ.get("HUBSPOT_DRY_RUN", "").lower() in ("1", "true", "yes"),
         )
@@ -325,6 +330,43 @@ class HubSpotClient:
             )
             raise
 
+    def fetch_all_objects(self, resource: HubSpotResource) -> list[dict[str, Any]]:
+        object_path = resource.endpoint.removesuffix("/search")
+        rows: list[dict[str, Any]] = []
+        seen_ids: set[tuple[str, bool]] = set()
+        for archived in (False, True):
+            after: str | None = None
+            for page_number in range(1, resource.page_limit + 1):
+                params: dict[str, Any] = {
+                    "limit": min(self.config.page_size, 100),
+                    "archived": str(archived).lower(),
+                }
+                if resource.properties:
+                    params["properties"] = ",".join(resource.properties)
+                if after is not None:
+                    params["after"] = after
+                payload = self._request(
+                    resource,
+                    "GET",
+                    object_path,
+                    params=params,
+                    page_cursor=after or str(page_number),
+                )
+                page_rows = payload.get("results", [])
+                for row in page_rows:
+                    object_id = str(row.get("id") or "")
+                    key = (object_id, archived)
+                    if key not in seen_ids:
+                        row["_hubspot_page_number"] = page_number
+                        rows.append(row)
+                        seen_ids.add(key)
+                after = (payload.get("paging") or {}).get("next", {}).get("after")
+                if not after:
+                    break
+            else:
+                raise RuntimeError(f"Page cap hit for full load {resource.name}: {resource.page_limit}")
+        return rows
+
     def search_objects(
         self,
         resource: HubSpotResource,
@@ -375,13 +417,7 @@ class HubSpotClient:
                 body["after"] = page_cursor
             if include_archived:
                 body["archived"] = True
-            return self._request(
-                resource,
-                "POST",
-                resource.endpoint,
-                body=body,
-                page_cursor=page_cursor,
-            )
+            return self._request(resource, "POST", resource.endpoint, body=body, page_cursor=page_cursor)
 
         first_payload = request_page(None)
         total = first_payload.get("total")
@@ -392,29 +428,9 @@ class HubSpotClient:
                     f"HubSpot search cap hit for {resource.name} in a sub-millisecond window"
                 )
             midpoint = start_at + (span / 2)
-            log.info(
-                "Splitting HubSpot search window for %s at %s; total=%s",
-                resource.name,
-                isoformat_utc(midpoint),
-                total,
-            )
             return (
-                self._search_objects_window(
-                    resource,
-                    start_at,
-                    midpoint,
-                    end_operator="LT",
-                    include_archived=include_archived,
-                    depth=depth + 1,
-                )
-                + self._search_objects_window(
-                    resource,
-                    midpoint,
-                    end_at,
-                    end_operator=end_operator,
-                    include_archived=include_archived,
-                    depth=depth + 1,
-                )
+                self._search_objects_window(resource, start_at, midpoint, "LT", include_archived, depth + 1)
+                + self._search_objects_window(resource, midpoint, end_at, end_operator, include_archived, depth + 1)
             )
 
         first_page_rows = first_payload.get("results", [])
@@ -442,11 +458,7 @@ class HubSpotClient:
             return payload["pipelines"]
         return [payload]
 
-    def fetch_associations(
-        self,
-        resource: HubSpotResource,
-        from_object_ids: list[str],
-    ) -> list[dict[str, Any]]:
+    def fetch_associations(self, resource: HubSpotResource, from_object_ids: list[str]) -> list[dict[str, Any]]:
         if not resource.from_object_type or not resource.to_object_type:
             raise ValueError(f"Association resource {resource.name} is missing object types")
         rows: list[dict[str, Any]] = []
@@ -495,25 +507,31 @@ class BigQuerySink:
             ds.location = self.config.location
             self.client.create_dataset(ds)
 
-    def ensure_table(self, dataset: str, table: str, schema: list[bigquery.SchemaField]) -> None:
+    def ensure_table(self, dataset: str, table: str, schema: list[Any]) -> None:
         self.ensure_dataset(dataset)
         table_id = self.table_id(dataset, table)
         try:
-            self.client.get_table(table_id)
+            existing = self.client.get_table(table_id)
         except NotFound:
             self.client.create_table(bigquery.Table(table_id, schema=schema))
+            return
+        existing_names = {field.name for field in existing.schema}
+        additions = [field for field in schema if field.name not in existing_names]
+        if additions:
+            existing.schema = [*existing.schema, *additions]
+            self.client.update_table(existing, ["schema"])
 
     def load_json_rows(
         self,
         dataset: str,
         table: str,
-        schema: list[bigquery.SchemaField],
+        schema: list[Any],
         rows: list[dict[str, Any]],
         write_disposition: str = "WRITE_APPEND",
     ) -> None:
+        self.ensure_table(dataset, table, schema)
         if not rows:
             return
-        self.ensure_table(dataset, table, schema)
         job_config = bigquery.LoadJobConfig(
             schema=schema,
             write_disposition=write_disposition,
@@ -555,18 +573,166 @@ class BigQuerySink:
                     "resource_type": resource.mode,
                     "resource_name": resource.name,
                     "watermark_at": isoformat_utc(watermark_at),
-                    "cursor_payload": {"cursor_field": resource.cursor_field},
+                    "cursor_payload": {"cursor_field": resource.cursor_field, "load_mode": "full"},
                     "updated_at": isoformat_utc(datetime.now(UTC)),
                     "run_id": run_id,
                 }
             ],
         )
 
-    def merge_current_object(self, resource: HubSpotResource, staging_table: str) -> None:
+    @staticmethod
+    def _quote(name: str) -> str:
+        return f"`{name.replace('`', '``')}`"
+
+    def _scd_hash_expression(self, columns: list[str], excluded: set[str]) -> str:
+        hash_columns = [column for column in columns if column not in excluded and not column.startswith("_scd")]
+        fields = ", ".join(f"S.{self._quote(column)}" for column in hash_columns)
+        return f"to_hex(sha256(to_json_string(struct({fields}))))"
+
+    def _sync_scd_table(
+        self,
+        staging_table: str,
+        scd_table: str,
+        schema: list[Any],
+        key_columns: list[str],
+        hash_exclude_columns: set[str],
+        run_id: str,
+    ) -> int:
+        self.ensure_table(self.config.dataset, scd_table, schema)
+        staging = self.table_id(self.config.staging_dataset, staging_table)
+        scd = self.table_id(self.config.dataset, scd_table)
+        changes_table = f"_scd_changes__{scd_table}__{run_id.replace('-', '_')}"
+        changes = self.table_id(self.config.staging_dataset, changes_table)
+        source_columns = [field.name for field in schema if not field.name.startswith("_scd")]
+        source_select = ", ".join(f"S.{self._quote(column)}" for column in source_columns)
+        target_select = ", ".join(f"T.{self._quote(column)}" for column in source_columns)
+        key_match = " and ".join(f"T.{self._quote(column)} = S.{self._quote(column)}" for column in key_columns)
+        target_null_check = " and ".join(f"T.{self._quote(column)} is null" for column in key_columns)
+        source_null_check = " and ".join(f"S.{self._quote(column)} is null" for column in key_columns)
+        run_timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        run_ts = f"timestamp('{run_timestamp}')"
+        hash_expr = self._scd_hash_expression(source_columns, hash_exclude_columns)
+
+        create_changes_sql = f"""
+            create or replace table `{changes}` as
+            with source_hashed as (
+                select
+                    S.*,
+                    {hash_expr} as `_scd_row_hash`
+                from `{staging}` S
+            ),
+            current_open as (
+                select *
+                from `{scd}`
+                where `_scd_is_current` = true
+            )
+            select
+                {source_select},
+                S.`_scd_row_hash`,
+                case
+                    when {target_null_check} then 'insert'
+                    when T.`_dlt_deleted_at` is not null then 'insert'
+                    else 'update'
+                end as `_scd_change_type`
+            from source_hashed S
+            left join current_open T
+                on {key_match}
+            where {target_null_check}
+               or T.`_dlt_deleted_at` is not null
+               or coalesce(T.`_scd_row_hash`, '') != S.`_scd_row_hash`
+            union all
+            select
+                {target_select},
+                T.`_scd_row_hash`,
+                'delete' as `_scd_change_type`
+            from current_open T
+            left join source_hashed S
+                on {key_match}
+            where {source_null_check}
+              and T.`_dlt_deleted_at` is null
+        """
+        self.client.query(create_changes_sql, location=self.config.location).result()
+
+        close_sql = f"""
+            merge `{scd}` T
+            using `{changes}` S
+            on {key_match} and T.`_scd_is_current` = true
+            when matched then update set
+                `_scd_valid_to` = {run_ts},
+                `_scd_is_current` = false,
+                `_dlt_synced_at` = {run_ts}
+        """
+        self.client.query(close_sql, location=self.config.location).result()
+
+        insert_columns = source_columns + [field.name for field in SCD_FIELDS]
+        insert_values = [f"S.{self._quote(column)}" for column in source_columns]
+        insert_values[insert_columns.index("_dlt_deleted_at")] = (
+            "case when S.`_scd_change_type` = 'delete' then "
+            + run_ts
+            + " else S.`_dlt_deleted_at` end"
+        )
+        insert_values.extend(
+            [
+                "S.`_scd_row_hash`",
+                "S.`_scd_change_type`",
+                run_ts,
+                "null",
+                "true",
+                f"'{run_id}'",
+                run_ts,
+            ]
+        )
+        insert_sql = f"""
+            insert into `{scd}` ({", ".join(self._quote(column) for column in insert_columns)})
+            select {", ".join(insert_values)}
+            from `{changes}` S
+        """
+        job = self.client.query(insert_sql, location=self.config.location)
+        job.result()
+        inserted = job.num_dml_affected_rows or 0
+        log.info("Synced %s (%d inserted versions)", scd_table, inserted)
+        return inserted
+
+    def sync_object_scd(self, resource: HubSpotResource, staging_table: str, run_id: str) -> int:
+        return self._sync_scd_table(
+            staging_table,
+            f"{resource.name}_scd",
+            OBJECT_SCD_SCHEMA,
+            ["object_id"],
+            OBJECT_HASH_EXCLUDE_COLUMNS,
+            run_id,
+        )
+
+    def sync_association_scd(self, staging_table: str, run_id: str) -> int:
+        return self._sync_scd_table(
+            staging_table,
+            "association_edges_scd",
+            ASSOCIATION_SCD_SCHEMA,
+            [
+                "from_object_type",
+                "from_object_id",
+                "to_object_type",
+                "to_object_id",
+                "association_category",
+                "association_type_id",
+            ],
+            ASSOCIATION_HASH_EXCLUDE_COLUMNS,
+            run_id,
+        )
+
+    def merge_current_object(self, resource: HubSpotResource, staging_table: str, full_load: bool = True) -> None:
         current_table = resource.name
         self.ensure_table(self.config.dataset, current_table, CURRENT_SCHEMA)
         target = self.table_id(self.config.dataset, current_table)
         source = self.table_id(self.config.staging_dataset, staging_table)
+        not_matched_by_source = """
+            when not matched by source and T._dlt_deleted_at is null then update set
+                deletion_source = 'full_load_missing',
+                last_seen_at = current_timestamp(),
+                loaded_at = current_timestamp(),
+                _dlt_synced_at = current_timestamp(),
+                _dlt_deleted_at = current_timestamp()
+        """ if full_load else ""
         sql = f"""
             merge `{target}` T
             using (
@@ -608,6 +774,7 @@ class BigQuerySink:
                 S.deletion_source, S.properties_json, S.raw_json, current_timestamp(), current_timestamp(),
                 S.last_run_id, S.last_gcs_uri, S.loaded_at, current_timestamp(), S._dlt_deleted_at
             )
+            {not_matched_by_source}
         """
         self.client.query(sql, location=self.config.location).result()
 
@@ -620,10 +787,17 @@ class BigQuerySink:
         """
         return [str(row.object_id) for row in self.client.query(sql, location=self.config.location).result()]
 
-    def merge_current_associations(self, staging_table: str) -> None:
+    def merge_current_associations(self, staging_table: str, full_load: bool = True) -> None:
         self.ensure_table(self.config.dataset, "association_edges", ASSOCIATION_CURRENT_SCHEMA)
         target = self.table_id(self.config.dataset, "association_edges")
         source = self.table_id(self.config.staging_dataset, staging_table)
+        not_matched_by_source = """
+            when not matched by source and T._dlt_deleted_at is null then update set
+                last_seen_at = current_timestamp(),
+                loaded_at = current_timestamp(),
+                _dlt_synced_at = current_timestamp(),
+                _dlt_deleted_at = current_timestamp()
+        """ if full_load else ""
         sql = f"""
             merge `{target}` T
             using (
@@ -671,6 +845,7 @@ class BigQuerySink:
                 S.raw_json, current_timestamp(), current_timestamp(), S.last_run_id, S.loaded_at,
                 current_timestamp(), null
             )
+            {not_matched_by_source}
         """
         self.client.query(sql, location=self.config.location).result()
 
@@ -680,9 +855,7 @@ class BigQuerySink:
 
     def upsert_run(self, row: dict[str, Any]) -> None:
         self.ensure_table(self.config.dataset, "_pipeline_runs", PIPELINE_RUNS_SCHEMA)
-        staging_table = (
-            f"_pipeline_runs__{str(row['run_id']).replace('-', '_')}__attempt_{row['attempt']}"
-        )
+        staging_table = f"_pipeline_runs__{str(row['run_id']).replace('-', '_')}__attempt_{row['attempt']}"
         self.load_json_rows(
             self.config.staging_dataset,
             staging_table,
@@ -727,11 +900,7 @@ def storage_client_upload(config: Config, object_name: str, rows: list[dict[str,
     client = storage.Client(project=config.project)
     bucket = client.bucket(config.raw_bucket)
     blob = bucket.blob(object_name)
-    blob.upload_from_string(
-        jsonl(rows),
-        content_type="application/jsonl",
-        if_generation_match=0,
-    )
+    blob.upload_from_string(jsonl(rows), content_type="application/jsonl", if_generation_match=0)
     return f"gs://{config.raw_bucket}/{object_name}"
 
 
@@ -739,21 +908,13 @@ def normalize_object_rows(
     resource: HubSpotResource,
     hubspot_rows: list[dict[str, Any]],
     run_id: str,
-    attempt: int,
     gcs_uri: str,
     extracted_at: datetime,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+) -> list[dict[str, Any]]:
     current_rows: list[dict[str, Any]] = []
-    extract_rows: list[dict[str, Any]] = []
     detected_at = datetime.now(UTC)
     for row in hubspot_rows:
-        object_id = str(
-            row.get("id")
-            or row.get("objectTypeId")
-            or row.get("name")
-            or row.get("label")
-            or ""
-        )
+        object_id = str(row.get("id") or row.get("objectTypeId") or row.get("name") or row.get("label") or "")
         if not object_id:
             raise ValueError(f"HubSpot row for {resource.name} is missing id")
         properties = row.get("properties") or {}
@@ -761,54 +922,38 @@ def normalize_object_rows(
         updated_at = source_updated_at(row)
         archived_at = parse_hubspot_timestamp(row.get("archivedAt"))
         deleted_at, deletion_source = deletion_values(row, detected_at)
-        base = {
-            "object_type": resource.object_type,
-            "object_id": object_id,
-            "created_at": isoformat_utc(created_at),
-            "updated_at": isoformat_utc(updated_at),
-            "archived": bool(row.get("archived", False)),
-            "archived_at": isoformat_utc(archived_at),
-            "properties_json": properties,
-            "raw_json": row,
-        }
-        extract_rows.append(
-            {
-                **base,
-                "run_id": run_id,
-                "attempt": attempt,
-                "extracted_at": isoformat_utc(extracted_at),
-                "gcs_uri": gcs_uri,
-                "loaded_at": isoformat_utc(datetime.now(UTC)),
-            }
-        )
         current_rows.append(
             {
-                **base,
+                "object_type": resource.object_type,
+                "object_id": object_id,
+                "created_at": isoformat_utc(created_at),
+                "updated_at": isoformat_utc(updated_at),
+                "archived": bool(row.get("archived", False)),
+                "archived_at": isoformat_utc(archived_at),
                 "deletion_source": deletion_source,
+                "properties_json": properties,
+                "raw_json": row,
                 "first_seen_at": None,
                 "last_seen_at": isoformat_utc(datetime.now(UTC)),
                 "last_run_id": run_id,
                 "last_gcs_uri": gcs_uri,
-                "loaded_at": isoformat_utc(datetime.now(UTC)),
+                "loaded_at": isoformat_utc(extracted_at),
                 "_dlt_synced_at": isoformat_utc(datetime.now(UTC)),
                 "_dlt_deleted_at": deleted_at,
             }
         )
-    return dedupe_current_rows(current_rows), extract_rows
+    return dedupe_current_rows(current_rows)
 
 
 def normalize_association_rows(
     resource: HubSpotResource,
     hubspot_rows: list[dict[str, Any]],
     run_id: str,
-    attempt: int,
-    gcs_uri: str,
     extracted_at: datetime,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+) -> list[dict[str, Any]]:
     if not resource.from_object_type or not resource.to_object_type:
         raise ValueError(f"Association resource {resource.name} is missing object types")
     current_rows: list[dict[str, Any]] = []
-    extract_rows: list[dict[str, Any]] = []
     for row in hubspot_rows:
         from_object_id = str(row.get("_from_object_id") or "")
         to_object_id = str(row.get("toObjectId") or row.get("id") or "")
@@ -822,33 +967,25 @@ def normalize_association_rows(
                 or assoc_type.get("id")
                 or "unknown"
             )
-            base = {
-                "from_object_type": resource.from_object_type,
-                "from_object_id": from_object_id,
-                "to_object_type": resource.to_object_type,
-                "to_object_id": to_object_id,
-                "association_category": assoc_type.get("category") or assoc_type.get("associationCategory"),
-                "association_type_id": association_type_id,
-                "association_label": assoc_type.get("label"),
-                "raw_json": row,
-                "first_seen_at": None,
-                "last_seen_at": isoformat_utc(datetime.now(UTC)),
-                "last_run_id": run_id,
-                "loaded_at": isoformat_utc(datetime.now(UTC)),
-                "_dlt_synced_at": isoformat_utc(datetime.now(UTC)),
-                "_dlt_deleted_at": None,
-            }
-            current_rows.append(base)
-            extract_rows.append(
+            current_rows.append(
                 {
-                    **base,
-                    "run_id": run_id,
-                    "attempt": attempt,
-                    "extracted_at": isoformat_utc(extracted_at),
-                    "gcs_uri": gcs_uri,
+                    "from_object_type": resource.from_object_type,
+                    "from_object_id": from_object_id,
+                    "to_object_type": resource.to_object_type,
+                    "to_object_id": to_object_id,
+                    "association_category": assoc_type.get("category") or assoc_type.get("associationCategory"),
+                    "association_type_id": association_type_id,
+                    "association_label": assoc_type.get("label"),
+                    "raw_json": row,
+                    "first_seen_at": None,
+                    "last_seen_at": isoformat_utc(datetime.now(UTC)),
+                    "last_run_id": run_id,
+                    "loaded_at": isoformat_utc(extracted_at),
+                    "_dlt_synced_at": isoformat_utc(datetime.now(UTC)),
+                    "_dlt_deleted_at": None,
                 }
             )
-    return current_rows, extract_rows
+    return current_rows
 
 
 def selected_resources(config: Config) -> list[HubSpotResource]:
@@ -893,14 +1030,13 @@ def run() -> None:
     try:
         for resource in selected_resources(config):
             log.info("Loading HubSpot resource %s", resource.name)
+            window_end = started_at
             if resource.mode == "metadata":
                 hubspot_rows = client.fetch_metadata(resource)
-                window_end = started_at
             elif resource.mode == "association":
                 source_ids = sink.active_object_ids(resource.from_object_type or "")
                 hubspot_rows = client.fetch_associations(resource, source_ids)
-                window_end = started_at
-            else:
+            elif config.mode == "incremental":
                 watermark = sink.get_watermark(resource)
                 window_start, window_end = request_window(
                     watermark,
@@ -909,6 +1045,8 @@ def run() -> None:
                     config.start_at,
                 )
                 hubspot_rows = client.search_objects(resource, window_start, window_end)
+            else:
+                hubspot_rows = client.fetch_all_objects(resource)
 
             page_name = raw_gcs_object_name(
                 config.raw_prefix,
@@ -921,53 +1059,33 @@ def run() -> None:
             gcs_uri = storage_client_upload(config, page_name, hubspot_rows)
             staging_table = f"{resource.name}__{run_id.replace('-', '_')}__attempt_{config.attempt}"
             if resource.mode == "association":
-                current_rows, extract_rows = normalize_association_rows(
-                    resource,
-                    hubspot_rows,
-                    run_id,
-                    config.attempt,
-                    gcs_uri,
-                    datetime.now(UTC),
+                current_rows = normalize_association_rows(resource, hubspot_rows, run_id, datetime.now(UTC))
+                sink.load_json_rows(
+                    config.staging_dataset,
+                    staging_table,
+                    ASSOCIATION_CURRENT_SCHEMA,
+                    current_rows,
+                    write_disposition="WRITE_TRUNCATE",
                 )
-                if current_rows:
-                    sink.load_json_rows(
-                        config.staging_dataset,
-                        staging_table,
-                        ASSOCIATION_CURRENT_SCHEMA,
-                        current_rows,
-                        write_disposition="WRITE_TRUNCATE",
-                    )
-                    sink.load_json_rows(
-                        config.dataset,
-                        "association_edges_extracts",
-                        ASSOCIATION_EXTRACT_SCHEMA,
-                        extract_rows,
-                    )
-                    sink.merge_current_associations(staging_table)
+                sink.sync_association_scd(staging_table, run_id)
+                sink.merge_current_associations(staging_table, full_load=(config.mode != "incremental"))
             else:
-                current_rows, extract_rows = normalize_object_rows(
+                current_rows = normalize_object_rows(
                     resource,
                     hubspot_rows,
                     run_id,
-                    config.attempt,
                     gcs_uri,
                     datetime.now(UTC),
                 )
-                if current_rows:
-                    sink.load_json_rows(
-                        config.staging_dataset,
-                        staging_table,
-                        CURRENT_SCHEMA,
-                        current_rows,
-                        write_disposition="WRITE_TRUNCATE",
-                    )
-                    sink.load_json_rows(
-                        config.dataset,
-                        f"{resource.name}_extracts",
-                        EXTRACT_SCHEMA,
-                        extract_rows,
-                    )
-                    sink.merge_current_object(resource, staging_table)
+                sink.load_json_rows(
+                    config.staging_dataset,
+                    staging_table,
+                    CURRENT_SCHEMA,
+                    current_rows,
+                    write_disposition="WRITE_TRUNCATE",
+                )
+                sink.sync_object_scd(resource, staging_table, run_id)
+                sink.merge_current_object(resource, staging_table, full_load=(config.mode != "incremental"))
             sink.update_watermark(resource, window_end, run_id)
             resource_status[resource.name] = {
                 "status": "success",
