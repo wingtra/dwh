@@ -7,7 +7,7 @@ models:
       `ol_finance.revolut_transactions` pass through where `is_ai_spend` is
       true, except Marco Schicker's Anthropic payments are excluded. Claude
       Team licence cost is added separately as one monthly fixed-CHF row per
-      active Claude member from the seed.
+      active Claude seat version from `ol_finance.claude_seats`.
     config:
       meta:
         owner: lucille.thomanek
@@ -26,7 +26,7 @@ models:
         description: |
           Reporting person for matching and attribution. For Revolut rows this
           is the original cardholder; for Claude Team licence rows this is the
-          licence holder from the Claude members seed.
+          licence holder from the Claude seat history.
       - name: source_payer
         description: |
           Original Revolut cardholder. NULL for synthetic Claude Team licence

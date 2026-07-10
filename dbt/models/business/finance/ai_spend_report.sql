@@ -22,34 +22,52 @@ source_transactions as (
     select * from {{ ref('revolut_transactions') }}
 ),
 
-claude_active_members as (
+claude_seat_versions as (
     select
         user_email as allocated_email,
         member_display_name as allocated_person,
+        valid_from,
+        valid_to,
+        last_observed_snapshot_date,
         case
             when seat_tier = 'premium' then 'premium'
             else 'basic'
         end as subscription_tier
-    from {{ ref('claude_members') }}
+    from {{ ref('claude_seats') }}
     where is_active_member
+      and is_present_in_snapshot
+),
+
+claude_snapshot_bounds as (
+    select
+        date_trunc(max(last_observed_snapshot_date), month) as latest_snapshot_month
+    from {{ ref('claude_seats') }}
 ),
 
 claude_licence_month_bounds as (
     select
-        min(transaction_month) as first_licence_month,
-        case
-            when extract(day from current_date()) >= 16
-                then date_trunc(current_date(), month)
-            else date_sub(date_trunc(current_date(), month), interval 1 month)
-        end as latest_licence_month,
-        max(source_created_at) as source_created_at,
-        max(source_updated_at) as source_updated_at,
-        max(source_loaded_at) as source_loaded_at
-    from source_transactions
-    where is_ai_spend
-      and payer = 'Marco Schicker'
-      and vendor = 'Anthropic'
-      and ai_spend_type = 'subscription / seat inferred'
+        min(t.transaction_month) as first_licence_month,
+        least(
+            date_trunc(current_date(), month),
+            greatest(
+                case
+                    when extract(day from current_date()) >= 16
+                        then date_trunc(current_date(), month)
+                    else date_sub(date_trunc(current_date(), month), interval 1 month)
+                end,
+                max(s.latest_snapshot_month)
+            )
+        ) as latest_licence_month,
+        max(s.latest_snapshot_month) as latest_snapshot_month,
+        max(t.source_created_at) as source_created_at,
+        max(t.source_updated_at) as source_updated_at,
+        max(t.source_loaded_at) as source_loaded_at
+    from source_transactions t
+    cross join claude_snapshot_bounds s
+    where t.is_ai_spend
+      and t.payer = 'Marco Schicker'
+      and t.vendor = 'Anthropic'
+      and t.ai_spend_type = 'subscription / seat inferred'
 ),
 
 claude_licence_months as (
@@ -126,7 +144,7 @@ claude_licence_rows as (
         'LLM' as ai_product_family,
         'subscription / seat licence estimate' as ai_spend_type,
         'high' as ai_classification_confidence,
-        'Claude Team licence row generated from the active Claude members seed with fixed CHF tier prices; Marco Anthropic Revolut payments are excluded.' as ai_classification_evidence,
+        'Claude Team licence row generated from observed Claude seat history with fixed CHF tier prices; Marco Anthropic Revolut payments are excluded.' as ai_classification_evidence,
         'Claude Team licence' as subscription_kind,
         'Claude Team licence' as subscription_type,
         a.subscription_tier,
@@ -135,7 +153,7 @@ claude_licence_rows as (
             else 25.0
         end as subscription_price_chf,
         'claude_team_licence_fixed_chf' as allocation_rule,
-        'active_claude_members_seed_fixed_chf_price' as allocation_basis,
+        'ol_claude_seat_history_fixed_chf_price' as allocation_basis,
         a.allocated_person,
         a.allocated_email,
         cast(null as string) as allocated_team,
@@ -149,7 +167,16 @@ claude_licence_rows as (
         m.source_updated_at,
         m.source_loaded_at
     from claude_licence_months m
-    cross join claude_active_members a
+    join claude_seat_versions a
+        on m.transaction_month >= date_trunc(a.valid_from, month)
+       and (
+           a.valid_to is null
+           or m.transaction_month <= date_trunc(a.valid_to, month)
+       )
+    qualify row_number() over (
+        partition by m.transaction_month, a.allocated_email
+        order by a.valid_from desc
+    ) = 1
 ),
 
 report_rows as (
