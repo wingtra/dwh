@@ -98,12 +98,17 @@ models:
     description: |
       One row per confirmed customer sale order with a pickup date (intercompany Wingtra Corp. orders
       excluded). Consumption mart behind the shipment lead-time dashboard. The KPI (per Janine Jampen's
-      2026-06-30 handover): a shipment is on target when picked up within 14 calendar days of customs
-      clearance (`cleared_date` -> `pickup_date`, calendar days). Orders without a clearance date stay in
-      the model so dashboards can compute coverage; `missing_clearance_reason` explains the gap. Negative
-      lead times are kept but excluded from the on-target flags via `has_valid_lead_time`. Bucket trends
-      by pickup week/month, not clearance week (clearance lags pickups). Refreshed daily after the Odoo
-      raw load.
+      2026-06-30 handover, updated in the 2026-07-07 review): a shipment is on target when picked up
+      within 14 calendar days of customs clearance (`cleared_date` -> `pickup_date`, calendar days).
+      Software/service-only orders (licences, subscriptions, memberships, tariff surcharges,
+      service-level packages) are excluded — they never physically ship (2026-07-07 review decision).
+      Merged orders (2025 migration) recover a missing clearance date from their cancelled source
+      orders via `legacy_shipment_ids`: earliest source clearance wins, so the lead time reflects the
+      goods that waited longest (2026-07-07 decision, pending Janine's sign-off). Orders without a
+      clearance date stay in the model so dashboards can compute coverage; `missing_clearance_reason`
+      explains the gap. Negative lead times are kept but excluded from the on-target flags via
+      `has_valid_lead_time`. Bucket trends by pickup week/month, not clearance week (clearance lags
+      pickups). Refreshed daily after the Odoo raw load.
     config:
       meta:
         owner: lucille.thomanek
@@ -132,7 +137,10 @@ models:
       - name: company_id
         description: Selling entity id. 1 = Wingtra AG, 9 = Wingtra Corp.
       - name: cleared_date
-        description: Customs clearance date — lead-time start. NULL cases are explained by missing_clearance_reason.
+        description: |
+          Customs clearance date — lead-time start. For merged orders that lost their own date, this is
+          the earliest clearance date of the cancelled source orders (`is_cleared_date_recovered`).
+          NULL cases are explained by missing_clearance_reason.
       - name: pickup_date
         description: Pickup date — lead-time end. Never NULL (scope filter).
         tests: [not_null]
@@ -158,23 +166,29 @@ models:
         description: Free-text shipping destination.
       - name: legacy_shipment_ids
         description: Comma-separated legacy shipment ids; more than one = merged SO.
+      - name: merged_source_sale_orders
+        description: |
+          For merged orders — comma-separated SO numbers of the cancelled source orders the shipment
+          was combined from (matched via legacy_shipment_ids). NULL for non-merged orders and merged
+          orders whose sources could not be resolved.
       - name: missing_clearance_reason
         description: |
-          Why cleared_date is NULL: 'software/service only' (no customs event exists),
-          'merged order (2025 migration)' (date lost in merge), or 'unexplained' (entry lag —
-          worth checking in Odoo). NULL when cleared_date is present.
+          Why cleared_date is NULL: 'merged order — sources not recoverable' (merged in the 2025
+          migration and no cancelled source order carries a clearance date) or 'unexplained' (entry
+          lag — worth checking in Odoo). NULL when cleared_date is present. Software/service-only
+          orders are excluded from the model entirely since the 2026-07-07 review.
         tests:
           - accepted_values:
               arguments:
-                values: ['software/service only', 'merged order (2025 migration)', 'unexplained']
+                values: ['merged order — sources not recoverable', 'unexplained']
       - name: has_physical_goods
-        description: At least one order line is a physical good.
-        tests: [not_null]
-      - name: is_software_or_service_only
-        description: Order has product lines but no physical good. Caution — many Service-category orders (repairs) still ship physically; do not blanket-exclude.
+        description: At least one order line is a physical good. False only for orders without product lines (software/service-only orders are excluded from the model).
         tests: [not_null]
       - name: is_merged_order
         description: SO merged from several legacy shipments during the 2025 migration.
+        tests: [not_null]
+      - name: is_cleared_date_recovered
+        description: cleared_date was taken from the cancelled source orders because the merged SO lost its own (earliest source clearance).
         tests: [not_null]
       - name: has_cleared_date
         description: cleared_date present. Weekly coverage = share of pickups with this true; below 60% the week's stats are unreliable.
@@ -192,4 +206,4 @@ models:
         description: Picked up within 7 calendar days of clearance. Same denominator rule as is_within_14_days.
         tests: [not_null]
       - name: lead_time_days
-        description: pickup_date - cleared_date in calendar days. NULL when cleared_date missing; negative on data errors. Prefer median over average — long-tail outliers (100-518 days) inflate averages.
+        description: pickup_date - cleared_date in calendar days. NULL when cleared_date missing; negative on data errors. Dashboard shows median and average side by side; median is the steering number — long-tail outliers (100-518 days) inflate averages.
