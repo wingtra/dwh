@@ -1,5 +1,6 @@
 """Run dlt: in-container Postgres -> BigQuery."""
 import logging
+from datetime import UTC, datetime
 
 import dlt
 import sqlalchemy as sa
@@ -80,10 +81,42 @@ SENSITIVE_DROP_COLUMNS: dict[str, list[str]] = {
 }
 
 
+SCD_TRACKED_TABLES = {
+    "crm_lead",
+    "mrp_bom",
+    "mrp_production",
+    "product_category",
+    "product_product",
+    "product_template",
+    "purchase_order",
+    "purchase_order_line",
+    "res_company",
+    "res_partner",
+    "res_users",
+    "sale_order",
+    "sale_order_line",
+    "stock_location",
+    "stock_move",
+    "stock_move_line",
+    "stock_warehouse",
+}
+
+
 PROMOTION_METADATA_COLUMNS = {
     "_dlt_synced_at": bigquery.SchemaField("_dlt_synced_at", "TIMESTAMP"),
     "_dlt_row_hash": bigquery.SchemaField("_dlt_row_hash", "STRING"),
     "_dlt_deleted_at": bigquery.SchemaField("_dlt_deleted_at", "TIMESTAMP"),
+}
+
+
+SCD_METADATA_COLUMNS = {
+    "_scd_row_hash": bigquery.SchemaField("_scd_row_hash", "STRING"),
+    "_scd_change_type": bigquery.SchemaField("_scd_change_type", "STRING"),
+    "_scd_valid_from": bigquery.SchemaField("_scd_valid_from", "TIMESTAMP"),
+    "_scd_valid_to": bigquery.SchemaField("_scd_valid_to", "TIMESTAMP"),
+    "_scd_is_current": bigquery.SchemaField("_scd_is_current", "BOOL"),
+    "_scd_run_id": bigquery.SchemaField("_scd_run_id", "STRING"),
+    "_scd_extracted_at": bigquery.SchemaField("_scd_extracted_at", "TIMESTAMP"),
 }
 
 
@@ -141,8 +174,8 @@ def _hash_columns(columns: list[str]) -> list[str]:
     return business_columns or columns
 
 
-def _row_hash_expression(columns: list[str]) -> str:
-    fields = ", ".join(f"S.{_quote(column)}" for column in _hash_columns(columns))
+def _row_hash_expression(columns: list[str], alias: str = "S") -> str:
+    fields = ", ".join(f"{alias}.{_quote(column)}" for column in _hash_columns(columns))
     return f"to_hex(sha256(to_json_string(struct({fields}))))"
 
 
@@ -169,11 +202,7 @@ def _ensure_target_table(
         return created
 
     existing = {field.name for field in table.schema}
-    additions = [
-        field
-        for field in staging_schema
-        if field.name not in existing
-    ]
+    additions = [field for field in staging_schema if field.name not in existing]
     additions.extend(
         PROMOTION_METADATA_COLUMNS[name]
         for name in metadata_fields
@@ -183,6 +212,38 @@ def _ensure_target_table(
         table.schema = list(table.schema) + additions
         table = client.update_table(table, ["schema"])
         log.info("Added %d columns to %s", len(additions), target_ref)
+    return table
+
+
+def _ensure_scd_table(
+    client: bigquery.Client,
+    table_name: str,
+    staging_schema: list[bigquery.SchemaField],
+    key_columns: list[str],
+) -> bigquery.Table:
+    scd_ref = _table_id(BQ_DATASET, f"{table_name}_scd")
+    metadata_fields = ["_dlt_synced_at", "_dlt_deleted_at"]
+    if key_columns == ["_dlt_row_hash"]:
+        metadata_fields.append("_dlt_row_hash")
+
+    required_fields = (
+        list(staging_schema)
+        + [PROMOTION_METADATA_COLUMNS[name] for name in metadata_fields]
+        + list(SCD_METADATA_COLUMNS.values())
+    )
+    try:
+        table = client.get_table(scd_ref)
+    except NotFound:
+        created = client.create_table(bigquery.Table(scd_ref, schema=required_fields))
+        log.info("Created SCD table %s", scd_ref)
+        return created
+
+    existing = {field.name for field in table.schema}
+    additions = [field for field in required_fields if field.name not in existing]
+    if additions:
+        table.schema = list(table.schema) + additions
+        table = client.update_table(table, ["schema"])
+        log.info("Added %d columns to %s", len(additions), scd_ref)
     return table
 
 
@@ -285,16 +346,10 @@ def _promote_table(client: bigquery.Client, table_name: str) -> int:
         key_columns,
     )
     target_columns = {field.name for field in target_table.schema}
-    available_source_columns = [
-        column for column in source_columns if column in target_columns
-    ]
+    available_source_columns = [column for column in source_columns if column in target_columns]
     metadata_columns = _metadata_field_names(available_source_columns)
 
-    source_sql = _deduped_source_sql(
-        staging_ref,
-        available_source_columns,
-        key_columns,
-    )
+    source_sql = _deduped_source_sql(staging_ref, available_source_columns, key_columns)
     on_clause = " and ".join(
         f"T.{_quote(column)} = S.{_quote(column)}" for column in key_columns
     )
@@ -312,9 +367,7 @@ def _promote_table(client: bigquery.Client, table_name: str) -> int:
     insert_columns = available_source_columns + [
         column for column in metadata_columns if column not in available_source_columns
     ]
-    insert_values = [
-        f"S.{_quote(column)}" for column in available_source_columns
-    ] + [
+    insert_values = [f"S.{_quote(column)}" for column in available_source_columns] + [
         (
             "current_timestamp()"
             if column == "_dlt_synced_at"
@@ -345,10 +398,134 @@ def _promote_table(client: bigquery.Client, table_name: str) -> int:
     return affected
 
 
+def _sync_scd_table(client: bigquery.Client, table_name: str, run_id: str) -> int:
+    staging_ref = _table_id(BQ_STAGING_DATASET, table_name)
+    scd_ref = _table_id(BQ_DATASET, f"{table_name}_scd")
+    changes_ref = _table_id(BQ_STAGING_DATASET, f"_scd_changes__{table_name}")
+    staging_table = client.get_table(staging_ref)
+    source_columns = [field.name for field in staging_table.schema]
+    if not source_columns:
+        return 0
+
+    key_columns = _key_columns(source_columns)
+    scd_table = _ensure_scd_table(client, table_name, list(staging_table.schema), key_columns)
+    target_columns = {field.name for field in scd_table.schema}
+    available_source_columns = [column for column in source_columns if column in target_columns]
+    metadata_columns = _metadata_field_names(available_source_columns)
+    source_sql = _deduped_source_sql(staging_ref, available_source_columns, key_columns)
+    row_hash_expr = _row_hash_expression(available_source_columns)
+    run_timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    run_ts = f"timestamp('{run_timestamp}')"
+    key_match = " and ".join(
+        f"T.{_quote(column)} = S.{_quote(column)}" for column in key_columns
+    )
+    source_join = " and ".join(
+        f"T.{_quote(column)} = S.{_quote(column)}" for column in key_columns
+    )
+    source_null_check = " and ".join(
+        f"S.{_quote(column)} is null" for column in key_columns
+    )
+    target_null_check = " and ".join(
+        f"T.{_quote(column)} is null" for column in key_columns
+    )
+    source_select = ", ".join(f"S.{_quote(column)}" for column in available_source_columns)
+    target_select = ", ".join(f"T.{_quote(column)}" for column in available_source_columns)
+    change_columns = available_source_columns + ["_scd_row_hash", "_scd_change_type"]
+
+    create_changes_sql = f"""
+        create or replace table `{changes_ref}` as
+        with source as ({source_sql}),
+        source_hashed as (
+            select
+                S.*,
+                {row_hash_expr} as `_scd_row_hash`
+            from source S
+        ),
+        current_open as (
+            select *
+            from `{scd_ref}`
+            where `_scd_is_current` = true
+        )
+        select
+            {source_select},
+            S.`_scd_row_hash`,
+            case
+                when {target_null_check} then 'insert'
+                when T.`_dlt_deleted_at` is not null then 'insert'
+                else 'update'
+            end as `_scd_change_type`
+        from source_hashed S
+        left join current_open T
+            on {source_join}
+        where {target_null_check}
+           or T.`_dlt_deleted_at` is not null
+           or coalesce(T.`_scd_row_hash`, '') != S.`_scd_row_hash`
+        union all
+        select
+            {target_select},
+            T.`_scd_row_hash`,
+            'delete' as `_scd_change_type`
+        from current_open T
+        left join source_hashed S
+            on {source_join}
+        where {source_null_check}
+          and T.`_dlt_deleted_at` is null
+    """
+    client.query(create_changes_sql, location=BQ_LOCATION).result()
+
+    close_sql = f"""
+        merge `{scd_ref}` T
+        using `{changes_ref}` S
+        on {key_match} and T.`_scd_is_current` = true
+        when matched then update set
+            `_scd_valid_to` = {run_ts},
+            `_scd_is_current` = false,
+            `_dlt_synced_at` = {run_ts}
+    """
+    client.query(close_sql, location=BQ_LOCATION).result()
+
+    insert_columns = available_source_columns + [
+        column for column in metadata_columns if column not in available_source_columns
+    ] + list(SCD_METADATA_COLUMNS.keys())
+    insert_values = [f"S.{_quote(column)}" for column in available_source_columns]
+    for column in metadata_columns:
+        if column in available_source_columns:
+            continue
+        if column == "_dlt_synced_at":
+            insert_values.append(run_ts)
+        elif column == "_dlt_deleted_at":
+            insert_values.append("case when S.`_scd_change_type` = 'delete' then " + run_ts + " else null end")
+        else:
+            insert_values.append(f"S.{_quote(column)}")
+    insert_values.extend(
+        [
+            "S.`_scd_row_hash`",
+            "S.`_scd_change_type`",
+            run_ts,
+            "null",
+            "true",
+            f"'{run_id}'",
+            run_ts,
+        ]
+    )
+    insert_sql = f"""
+        insert into `{scd_ref}` ({", ".join(_quote(column) for column in insert_columns)})
+        select {", ".join(insert_values)}
+        from `{changes_ref}` S
+    """
+    insert_job = client.query(insert_sql, location=BQ_LOCATION)
+    insert_job.result()
+    inserted = insert_job.num_dml_affected_rows or 0
+    log.info("Synced %s_scd (%d inserted versions)", table_name, inserted)
+    return inserted
+
+
 def _promote_staging_dataset() -> dict[str, int]:
     client = bigquery.Client(project=GCP_PROJECT, location=BQ_LOCATION)
     promoted: dict[str, int] = {}
+    scd_synced: dict[str, int] = {}
     table_names = _staging_table_names(client)
+    run_id = f"odoo-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}"
     failures = _preflight_staging_dataset(client, table_names)
     for table_name in table_names:
         if table_name in failures:
@@ -356,6 +533,8 @@ def _promote_staging_dataset() -> dict[str, int]:
             continue
         try:
             promoted[table_name] = _promote_table(client, table_name)
+            if table_name in SCD_TRACKED_TABLES:
+                scd_synced[table_name] = _sync_scd_table(client, table_name, run_id)
         except Exception as exc:
             log.exception("Promotion failed for %s", table_name)
             failures[table_name] = str(exc)
@@ -367,6 +546,7 @@ def _promote_staging_dataset() -> dict[str, int]:
             f"Promotion failed for {len(failures)} of {len(table_names)} tables "
             f"({len(promoted)} promoted): {summary}"
         )
+    log.info("Synced SCD tables: %s", scd_synced)
     return promoted
 
 
