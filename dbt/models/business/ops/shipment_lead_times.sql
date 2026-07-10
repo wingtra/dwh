@@ -1,7 +1,8 @@
 /*
     Shipment lead-time report (cleared -> pickup) behind the ops lead-time
-    dashboard. One row per confirmed customer sale order with a pickup date
-    (intercompany Wingtra Corp. orders excluded).
+    dashboard. One row per confirmed Wingtra AG customer sale order with a
+    pickup date (Wingtra Corp. intercompany and non-AG selling entities
+    excluded; AG-only scope per Janine's 2026-07-10 sign-off).
 
     KPI definition (from Janine Jampen's 2026-06-30 handover, updated in the
     2026-07-07 review): a shipment is on target when it is picked up within
@@ -17,7 +18,7 @@
     their clearance date. We recover it from the cancelled source orders
     matched via `legacy_shipment_ids`: cleared_date = earliest source
     clearance, i.e. the lead time is driven by the goods that waited
-    longest (2026-07-07 review decision, pending Janine's confirmation).
+    longest (2026-07-07 review decision, signed off by Janine 2026-07-10).
     `merged_source_sale_orders` lists the source SOs for traceability.
 
     Orders without a clearance date stay IN this model so dashboards can
@@ -61,6 +62,7 @@ shipments as (
     from {{ ref('sale_orders') }} so
     left join merged_order_sources mos on mos.sale_order_id = so.sale_order_id
     where so.is_confirmed
+      and so.company_id = 1  -- Wingtra AG only (Janine, 2026-07-10)
       and not so.is_intercompany_customer
       and not so.is_software_or_service_only
       and so.pickup_date is not null

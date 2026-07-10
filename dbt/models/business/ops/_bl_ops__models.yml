@@ -96,15 +96,16 @@ models:
 
   - name: shipment_lead_times
     description: |
-      One row per confirmed customer sale order with a pickup date (intercompany Wingtra Corp. orders
-      excluded). Consumption mart behind the shipment lead-time dashboard. The KPI (per Janine Jampen's
-      2026-06-30 handover, updated in the 2026-07-07 review): a shipment is on target when picked up
-      within 14 calendar days of customs clearance (`cleared_date` -> `pickup_date`, calendar days).
+      One row per confirmed Wingtra AG customer sale order with a pickup date (AG-only scope and
+      Wingtra Corp. intercompany exclusion per Janine's 2026-07-10 sign-off). Consumption mart behind
+      the shipment lead-time dashboard. The KPI (per Janine Jampen's 2026-06-30 handover, updated in
+      the 2026-07-07 review, all decisions signed off 2026-07-10): a shipment is on target when picked
+      up within 14 calendar days of customs clearance (`cleared_date` -> `pickup_date`, calendar days).
       Software/service-only orders (licences, subscriptions, memberships, tariff surcharges,
       service-level packages) are excluded — they never physically ship (2026-07-07 review decision).
       Merged orders (2025 migration) recover a missing clearance date from their cancelled source
       orders via `legacy_shipment_ids`: earliest source clearance wins, so the lead time reflects the
-      goods that waited longest (2026-07-07 decision, pending Janine's sign-off). Orders without a
+      goods that waited longest. Orders without a
       clearance date stay in the model so dashboards can compute coverage; `missing_clearance_reason`
       explains the gap. Negative lead times are kept but excluded from the on-target flags via
       `has_valid_lead_time`. Bucket trends by pickup week/month, not clearance week (clearance lags
@@ -157,11 +158,11 @@ models:
       - name: customer_name
         description: Customer organization name.
       - name: selling_entity
-        description: Human-readable selling entity label derived from company_id.
+        description: Human-readable selling entity label derived from company_id. Always 'Wingtra AG' since the AG-only scope decision (2026-07-10).
         tests:
           - accepted_values:
               arguments:
-                values: ['Wingtra AG', 'Wingtra Corp.']
+                values: ['Wingtra AG']
       - name: destination
         description: Free-text shipping destination.
       - name: legacy_shipment_ids
