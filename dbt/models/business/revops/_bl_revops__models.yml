@@ -64,3 +64,43 @@ models:
         description: Distinct licences recognizing in the month (live data).
     # Grain (month_date x license_type_label) is enforced by the singular
     # test tests/assert_arr_bl_grain_unique.sql (no dbt_utils in this project).
+
+  - name: drone_nrr
+    description: |
+      Drone Non-Recurring Revenue by quarter (2026), reproduced from the
+      commission object. A drone counts when its commission is Confirmed with
+      sku_revenue > 0 (object-layer is_counted). All drone revenue is NRR.
+      Reconciles to the "Monthly NRR vs. RR" sheet Drones block:
+      Q1 1,839,215 / Q2 2,378,345 at the 2026-07-08 sync (object + sheet are
+      both live, so figures drift ~1-2% between syncs). Quarterly only — the
+      commission object has quarter + year but no month.
+    config:
+      meta:
+        owner: alex.overholser
+        domain: revops
+        layer: bl
+        consumer_type: bi_and_reporting
+        grain: year_quarter
+        synonyms: ['drone NRR', 'drones sold', 'drone revenue', 'NRR drones']
+        sample_questions:
+          - 'What was drone NRR in Q2 2026?'
+          - 'How many drones were sold (counted) per quarter?'
+        pii: none
+    columns:
+      - name: year
+        tests: [not_null]
+      - name: quarter
+        description: Q1..Q4 (commission object quarter).
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Q1', 'Q2', 'Q3', 'Q4']
+      - name: drones_sold
+        description: Count of Confirmed drone commissions with sku_revenue > 0.
+        tests: [not_null]
+      - name: drone_nrr_revenue
+        description: SUM(sku_revenue) over the counted drone commissions (USD).
+        tests: [not_null]
+    # Grain (year x quarter) enforced by singular test
+    # tests/assert_drone_nrr_grain_unique.sql (no dbt_utils in this project).
