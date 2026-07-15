@@ -104,3 +104,58 @@ models:
         tests: [not_null]
     # Grain (year x quarter) enforced by singular test
     # tests/assert_drone_nrr_grain_unique.sql (no dbt_utils in this project).
+
+  - name: payload_nrr
+    description: |
+      Payload NRR by quarter (2026). Confirmed payload commissions with
+      sku_revenue > 0 (all NRR). Q1 1,304,903 / Q2 1,933,734 vs sheet
+      1,302,903 / 1,944,054 (99.85% / 99.5%). Quarterly grain.
+    config:
+      meta:
+        owner: alex.overholser
+        domain: revops
+        layer: bl
+        grain: year_quarter
+    columns:
+      - name: year
+        tests: [not_null]
+      - name: quarter
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Q1', 'Q2', 'Q3', 'Q4']
+      - name: payloads_sold
+        tests: [not_null]
+      - name: payload_nrr_revenue
+        tests: [not_null]
+    # Grain enforced by tests/assert_payload_nrr_grain_unique.sql.
+
+  - name: license_nrr_rr
+    description: |
+      License NRR + RR by quarter (2026), full set. Non-annual (ADP/PPK/SYW) +
+      LiDAR HW = license_nrr; annual licenses + LiDAR SW/renewal/upgrade =
+      license_rr. Classified by sku_revenue value via seed
+      sku_license_category_seed. Non-annual NRR reconciles EXACT to the sheet
+      "NRR Licenses" row (120,700 / 109,310). Quarterly grain.
+    config:
+      meta:
+        owner: alex.overholser
+        domain: revops
+        layer: bl
+        grain: year_quarter
+    columns:
+      - name: year
+        tests: [not_null]
+      - name: quarter
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Q1', 'Q2', 'Q3', 'Q4']
+      - name: license_nrr
+        tests: [not_null]
+      - name: license_rr
+        tests: [not_null]
+    # Grain enforced by tests/assert_license_nrr_rr_grain_unique.sql;
+    # value coverage by tests/assert_license_values_mapped.sql.

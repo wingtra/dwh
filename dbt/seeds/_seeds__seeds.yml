@@ -155,3 +155,26 @@ seeds:
       - name: export_date
         description: Date the members export was downloaded.
         tests: [not_null]
+
+  - name: sku_license_category_seed
+    description: |
+      Maps License commission sku_revenue value -> revenue class + NRR/RR
+      split. sku_type is NULL on License commission records, so classification
+      is by value (unambiguous per the SKU master list). Invariant:
+      nrr_amount + rr_amount = sku_revenue (SPLIT rows carry the LiDAR HW/SW
+      split, e.g. 48700 -> 23200 NRR + 25500 RR). Legacy 60445 = UNKNOWN.
+    columns:
+      - name: sku_revenue
+        description: License commission sku_revenue value (join key), USD.
+        tests: [not_null, unique]
+      - name: revenue_class
+        description: NRR | RR | SPLIT | UNKNOWN.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['NRR', 'RR', 'SPLIT', 'UNKNOWN']
+      - name: nrr_amount
+        tests: [not_null]
+      - name: rr_amount
+        tests: [not_null]

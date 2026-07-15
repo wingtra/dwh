@@ -1,0 +1,26 @@
+sku_revenue,sku_name,revenue_class,nrr_amount,rr_amount
+2465,Accidental Damage Protection,NRR,2465,0
+1275,PPK Starter,NRR,1275,0
+5100,PPK Premium (multi-payload),NRR,5100,0
+3825,PPK Upgrade,NRR,3825,0
+4250,SYW-UNL (2nd-year warranty),NRR,4250,0
+8800,Drone Operating System & Apps,RR,0,8800
+8925,WingtraCare,RR,0,8925
+11250,TMP+ renewal,RR,0,11250
+12495,Wingtra Pilot Blue Perpetual,RR,0,12495
+4165,Wingtra Pilot Blue 1 year,RR,0,4165
+17850,2x Wingtra App PRO 3-year (one line),RR,0,17850
+26775,multi WingtraCare (one line),RR,0,26775
+1520,WingtraRAY OS renewal 1 year,RR,0,1520
+4560,WingtraRAY OS renewal 3 years,RR,0,4560
+2850,Wingtra App PRO 1 year,RR,0,2850
+8550,Wingtra App PRO 3 year,RR,0,8550
+11175,Wingtra App UNLIMITED 1 year,RR,0,11175
+19125,WingtraCare BLU,RR,0,19125
+48700,LiDAR Perpetual (new set: 23200 HW NRR + 25500 SW RR),SPLIT,23200,25500
+35200,LiDAR 12-month (old bundle: 26785 NRR + 8415 SW RR),SPLIT,26785,8415
+8415,Annual LiDAR license fee,RR,0,8415
+13500,LiDAR Upgrade,RR,0,13500
+25245,LiDAR Upgrade,RR,0,25245
+25500,LiDAR Software,RR,0,25500
+60445,LiDAR Perpetual (legacy),UNKNOWN,0,0
