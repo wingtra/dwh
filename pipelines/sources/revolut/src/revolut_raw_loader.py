@@ -58,12 +58,13 @@ REFRESH_TOKEN_SECRET = os.environ.get(
     "revolut-business-api-refresh-token",
 )
 START_CREATED_AT = os.environ.get("REVOLUT_START_CREATED_AT", "2026-01-01T00:00:00Z")
+EXPENSE_START_DATE = os.environ.get("REVOLUT_EXPENSE_START_DATE", START_CREATED_AT)
 PAGE_SIZE = int(os.environ.get("REVOLUT_PAGE_SIZE", "1000"))
 MAX_PAGES = int(os.environ.get("REVOLUT_MAX_PAGES", "100"))
 HTTP_TIMEOUT_SECONDS = int(os.environ.get("REVOLUT_HTTP_TIMEOUT_SECONDS", "60"))
 LOOKBACK_DAYS = int(os.environ.get("REVOLUT_LOOKBACK_DAYS", "31"))
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-WATERMARK_RESOURCE = "transactions.created_at"
+TRANSACTION_WATERMARK_RESOURCE = "transactions.created_at"
 
 
 TRANSACTIONS_SCHEMA = [
@@ -138,6 +139,36 @@ ACCOUNTS_SCHEMA = [
     bigquery.SchemaField("_dlt_deleted_at", "TIMESTAMP"),
 ]
 
+EXPENSES_SCHEMA = [
+    bigquery.SchemaField("run_id", "STRING"),
+    bigquery.SchemaField("extracted_at", "TIMESTAMP"),
+    bigquery.SchemaField("request_from_expense_date", "TIMESTAMP"),
+    bigquery.SchemaField("request_to_expense_date", "TIMESTAMP"),
+    bigquery.SchemaField("page_number", "INT64"),
+    bigquery.SchemaField("row_index", "INT64"),
+    bigquery.SchemaField("gcs_uri", "STRING"),
+    bigquery.SchemaField("expense_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("expense_state", "STRING"),
+    bigquery.SchemaField("transaction_type", "STRING"),
+    bigquery.SchemaField("transaction_id", "STRING"),
+    bigquery.SchemaField("description", "STRING"),
+    bigquery.SchemaField("payer", "STRING"),
+    bigquery.SchemaField("merchant", "STRING"),
+    bigquery.SchemaField("expense_date", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("submitted_at", "TIMESTAMP"),
+    bigquery.SchemaField("completed_at", "TIMESTAMP"),
+    bigquery.SchemaField("labels", "JSON"),
+    bigquery.SchemaField("splits", "JSON"),
+    bigquery.SchemaField("receipt_ids", "JSON"),
+    bigquery.SchemaField("spent_amount_raw", "STRING"),
+    bigquery.SchemaField("spent_amount_numeric", "NUMERIC"),
+    bigquery.SchemaField("spent_amount", "FLOAT64"),
+    bigquery.SchemaField("spent_currency", "STRING"),
+    bigquery.SchemaField("expense_raw_json", "JSON"),
+    bigquery.SchemaField("loaded_at", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("_dlt_deleted_at", "TIMESTAMP"),
+]
+
 RUNS_SCHEMA = [
     bigquery.SchemaField("run_id", "STRING", mode="REQUIRED"),
     bigquery.SchemaField("started_at", "TIMESTAMP", mode="REQUIRED"),
@@ -150,6 +181,11 @@ RUNS_SCHEMA = [
     bigquery.SchemaField("transactions_fetched", "INT64"),
     bigquery.SchemaField("transaction_legs_loaded", "INT64"),
     bigquery.SchemaField("accounts_loaded", "INT64"),
+    bigquery.SchemaField("expenses_fetched", "INT64"),
+    bigquery.SchemaField("expenses_loaded", "INT64"),
+    bigquery.SchemaField("expense_pages_fetched", "INT64"),
+    bigquery.SchemaField("expense_from_date", "TIMESTAMP"),
+    bigquery.SchemaField("expense_to_date", "TIMESTAMP"),
     bigquery.SchemaField("pages_fetched", "INT64"),
     bigquery.SchemaField("gcs_objects_written", "INT64"),
     bigquery.SchemaField("error_message", "STRING"),
@@ -358,6 +394,7 @@ class RevolutClient:
         path: str,
         params: dict[str, Any] | None = None,
         page_number: int | None = None,
+        cursor_field: str = "created_at",
     ) -> Any:
         url = f"{API_BASE_URL}/{path.lstrip('/')}"
         started = time.monotonic()
@@ -368,7 +405,7 @@ class RevolutClient:
             response.raise_for_status()
             data = response.json()
             row_count = len(data) if isinstance(data, list) else None
-            cursor = data[-1].get("created_at") if isinstance(data, list) and data else None
+            cursor = data[-1].get(cursor_field) if isinstance(data, list) and data else None
             self.recorder.record(
                 path=path,
                 params=params,
@@ -398,65 +435,94 @@ class RevolutClient:
             return data
         raise ValueError(f"Unexpected accounts response shape: {type(data)}")
 
-    def transaction_pages(self, from_created_at: str, to_created_at: str) -> list[tuple[int, list[dict[str, Any]]]]:
+    def _pages_backwards(
+        self,
+        path: str,
+        cursor_field: str,
+        from_value: str,
+        to_value: str,
+        page_size: int,
+        label: str,
+    ) -> list[tuple[int, list[dict[str, Any]]]]:
+        """Paginate a list endpoint backwards by a timestamp cursor field."""
         pages: list[tuple[int, list[dict[str, Any]]]] = []
         seen_ids: set[str] = set()
-        page_to = to_created_at
+        page_to = to_value
 
         for page_number in range(1, MAX_PAGES + 1):
             params = {
-                "from": from_created_at,
+                "from": from_value,
                 "to": page_to,
-                "count": PAGE_SIZE,
+                "count": page_size,
             }
-            page = self._get("/transactions", params=params, page_number=page_number)
+            page = self._get(path, params=params, page_number=page_number, cursor_field=cursor_field)
             if not page:
                 break
             if not isinstance(page, list):
-                raise ValueError(f"Unexpected transactions response shape: {type(page)}")
+                raise ValueError(f"Unexpected {label} response shape: {type(page)}")
 
             new_rows = []
-            for transaction in page:
-                transaction_id = transaction.get("id")
-                if transaction_id and transaction_id in seen_ids:
+            for row in page:
+                row_id = row.get("id")
+                if row_id and row_id in seen_ids:
                     continue
-                if transaction_id:
-                    seen_ids.add(transaction_id)
-                new_rows.append(transaction)
+                if row_id:
+                    seen_ids.add(row_id)
+                new_rows.append(row)
 
-            last_created_at = page[-1].get("created_at")
-            first_created_at = page[0].get("created_at")
+            last_cursor = page[-1].get(cursor_field)
+            first_cursor = page[0].get(cursor_field)
             log.info(
-                "Fetched page %s: %s rows, %s new, first_created_at=%s, last_created_at=%s",
+                "Fetched %s page %s: %s rows, %s new, first_%s=%s, last_%s=%s",
+                label,
                 page_number,
                 len(page),
                 len(new_rows),
-                first_created_at,
-                last_created_at,
+                cursor_field,
+                first_cursor,
+                cursor_field,
+                last_cursor,
             )
 
             if new_rows:
                 pages.append((page_number, new_rows))
 
-            if len(page) < PAGE_SIZE or not last_created_at or not new_rows:
+            if len(page) < page_size or not last_cursor or not new_rows:
                 break
-            if last_created_at <= from_created_at:
+            if last_cursor <= from_value:
                 break
-            if last_created_at >= page_to:
+            if last_cursor >= page_to:
                 raise ValueError(
-                    "Revolut pagination did not move backwards by created_at; "
-                    f"page_to={page_to}, last_created_at={last_created_at}"
+                    f"Revolut {label} pagination did not move backwards by {cursor_field}; "
+                    f"page_to={page_to}, last_{cursor_field}={last_cursor}"
                 )
-            if len(page) == PAGE_SIZE and first_created_at == last_created_at:
+            if len(page) == page_size and first_cursor == last_cursor:
                 raise ValueError(
-                    "Ambiguous Revolut pagination: full page has identical created_at values. "
+                    f"Ambiguous Revolut {label} pagination: full page has identical {cursor_field} values. "
                     "Cannot safely advance without a cursor/tie-breaker."
                 )
-            page_to = last_created_at
+            page_to = last_cursor
         else:
             raise ValueError(f"Reached REVOLUT_MAX_PAGES={MAX_PAGES}; refusing to silently truncate")
 
         return pages
+
+    def transaction_pages(self, from_created_at: str, to_created_at: str) -> list[tuple[int, list[dict[str, Any]]]]:
+        return self._pages_backwards(
+            "/transactions", "created_at", from_created_at, to_created_at, PAGE_SIZE, "transaction"
+        )
+
+    def expense_pages(self, from_expense_date: str, to_expense_date: str) -> list[tuple[int, list[dict[str, Any]]]]:
+        """Fetch the current expense state as append-only snapshots.
+
+        The Expenses API only paginates by ``expense_date`` and does not expose
+        an update timestamp, so the caller re-reads the full window from
+        REVOLUT_EXPENSE_START_DATE to recapture state, category, and receipt
+        changes on old expenses. The API caps page size at 500.
+        """
+        return self._pages_backwards(
+            "/expenses", "expense_date", from_expense_date, to_expense_date, min(PAGE_SIZE, 500), "expense"
+        )
 
 
 def _table_id(table_name: str) -> str:
@@ -557,7 +623,7 @@ def _merge_one(
         client.delete_table(staging_id, not_found_ok=True)
 
 
-def _current_watermark(client: bigquery.Client) -> str:
+def _current_watermark(client: bigquery.Client, resource: str, default: str) -> str:
     sql = f"""
         select watermark_at
         from `{_table_id('_watermarks')}`
@@ -566,21 +632,21 @@ def _current_watermark(client: bigquery.Client) -> str:
         limit 1
     """
     job_config = bigquery.QueryJobConfig(
-        query_parameters=[bigquery.ScalarQueryParameter("resource", "STRING", WATERMARK_RESOURCE)]
+        query_parameters=[bigquery.ScalarQueryParameter("resource", "STRING", resource)]
     )
     rows = list(client.query(sql, job_config=job_config, location=BQ_LOCATION).result())
     if not rows:
-        return START_CREATED_AT
+        return default
     watermark = rows[0]["watermark_at"]
     if isinstance(watermark, datetime):
         return watermark.astimezone(UTC).isoformat().replace("+00:00", "Z")
     return str(watermark).replace("+00:00", "Z")
 
 
-def _window_start(watermark: str) -> str:
+def _window_start(watermark: str, start: str, lookback_days: int) -> str:
     parsed = _parse_utc(watermark)
-    lookback = parsed - timedelta(days=LOOKBACK_DAYS)
-    floor = _parse_utc(START_CREATED_AT)
+    lookback = parsed - timedelta(days=lookback_days)
+    floor = _parse_utc(start)
     return max(lookback, floor).isoformat().replace("+00:00", "Z")
 
 
@@ -588,14 +654,14 @@ def _record_run(client: bigquery.Client, row: dict[str, Any]) -> None:
     _merge_one(client, "_pipeline_runs", RUNS_SCHEMA, ["run_id"], row)
 
 
-def _record_watermark(client: bigquery.Client, watermark_at: str, run_id: str) -> None:
+def _record_watermark(client: bigquery.Client, resource: str, watermark_at: str, run_id: str) -> None:
     _merge_one(
         client,
         "_watermarks",
         WATERMARKS_SCHEMA,
         ["resource"],
         {
-            "resource": WATERMARK_RESOURCE,
+            "resource": resource,
             "watermark_at": watermark_at,
             "updated_at": _utc_now(),
             "run_id": run_id,
@@ -741,12 +807,61 @@ def _transaction_rows(
     return rows
 
 
+def _expense_rows(
+    pages: list[PageResult],
+    run_id: str,
+    extracted_at: str,
+    request_from: str,
+    request_to: str,
+) -> list[dict[str, Any]]:
+    rows = []
+    row_index = 0
+    for page in pages:
+        for expense in page.rows:
+            spent_amount = expense.get("spent_amount") or {}
+            amount = spent_amount.get("amount")
+            rows.append(
+                {
+                    "run_id": run_id,
+                    "extracted_at": extracted_at,
+                    "request_from_expense_date": request_from,
+                    "request_to_expense_date": request_to,
+                    "page_number": page.page_number,
+                    "row_index": row_index,
+                    "gcs_uri": page.gcs_uri,
+                    "expense_id": expense.get("id"),
+                    "expense_state": expense.get("state"),
+                    "transaction_type": expense.get("transaction_type"),
+                    "transaction_id": expense.get("transaction_id"),
+                    "description": expense.get("description"),
+                    "payer": expense.get("payer"),
+                    "merchant": expense.get("merchant"),
+                    "expense_date": expense.get("expense_date"),
+                    "submitted_at": expense.get("submitted_at"),
+                    "completed_at": expense.get("completed_at"),
+                    "labels": expense.get("labels") or {},
+                    "splits": expense.get("splits") or [],
+                    "receipt_ids": expense.get("receipt_ids") or [],
+                    "spent_amount_raw": _as_raw(amount),
+                    "spent_amount_numeric": _as_numeric_string(amount),
+                    "spent_amount": _as_float(amount),
+                    "spent_currency": spent_amount.get("currency"),
+                    "expense_raw_json": expense,
+                    "loaded_at": extracted_at,
+                    "_dlt_deleted_at": None,
+                }
+            )
+            row_index += 1
+    return rows
+
+
 def _prepare() -> bigquery.Client:
     client = bigquery.Client(project=PROJECT, location=BQ_LOCATION)
     _ensure_dataset(client)
     for table_name, schema in (
         ("transactions", TRANSACTIONS_SCHEMA),
         ("accounts", ACCOUNTS_SCHEMA),
+        ("expenses", EXPENSES_SCHEMA),
         ("_pipeline_runs", RUNS_SCHEMA),
         ("_api_requests", API_REQUESTS_SCHEMA),
         ("_watermarks", WATERMARKS_SCHEMA),
@@ -765,9 +880,13 @@ def main() -> None:
     bq_client = _prepare()
     storage_client = storage.Client(project=PROJECT)
     recorder = ApiRequestRecorder(run_id)
-    watermark_before = _current_watermark(bq_client)
-    from_created_at = _window_start(watermark_before)
+    watermark_before = _current_watermark(bq_client, TRANSACTION_WATERMARK_RESOURCE, START_CREATED_AT)
+    from_created_at = _window_start(watermark_before, START_CREATED_AT, LOOKBACK_DAYS)
     to_created_at = _utc_now()
+    # Expenses have no source update timestamp, so every run re-reads the full
+    # window from EXPENSE_START_DATE; a watermark would never narrow it.
+    expense_from_date = EXPENSE_START_DATE
+    expense_to_date = to_created_at
     start_monotonic = time.monotonic()
 
     run_row = {
@@ -782,6 +901,11 @@ def main() -> None:
         "transactions_fetched": 0,
         "transaction_legs_loaded": 0,
         "accounts_loaded": 0,
+        "expenses_fetched": 0,
+        "expenses_loaded": 0,
+        "expense_pages_fetched": 0,
+        "expense_from_date": expense_from_date,
+        "expense_to_date": expense_to_date,
         "pages_fetched": 0,
         "gcs_objects_written": 0,
         "error_message": None,
@@ -813,8 +937,23 @@ def main() -> None:
 
         transaction_rows = _transaction_rows(page_results, run_id, extracted_at, from_created_at, to_created_at)
         transaction_legs_loaded = _load_append(bq_client, "transactions", transaction_rows, TRANSACTIONS_SCHEMA)
+
+        raw_expense_pages = revolut.expense_pages(expense_from_date, expense_to_date)
+        expense_page_results: list[PageResult] = []
+        for page_number, page_rows in raw_expense_pages:
+            object_name = _raw_object_name("expenses", run_id, f"page-{page_number:05d}.jsonl", extracted_at)
+            gcs_uri = _write_jsonl(storage_client, object_name, page_rows)
+            cursor = page_rows[-1].get("expense_date") if page_rows else None
+            expense_page_results.append(
+                PageResult(rows=page_rows, page_number=page_number, gcs_uri=gcs_uri, cursor_created_at=cursor)
+            )
+
+        expense_rows = _expense_rows(
+            expense_page_results, run_id, extracted_at, expense_from_date, expense_to_date
+        )
+        expenses_loaded = _load_append(bq_client, "expenses", expense_rows, EXPENSES_SCHEMA)
         _load_append(bq_client, "_api_requests", recorder.rows, API_REQUESTS_SCHEMA)
-        _record_watermark(bq_client, to_created_at, run_id)
+        _record_watermark(bq_client, TRANSACTION_WATERMARK_RESOURCE, to_created_at, run_id)
 
         finished_at = _utc_now()
         _record_run(
@@ -827,15 +966,20 @@ def main() -> None:
                 "transactions_fetched": sum(len(page.rows) for page in page_results),
                 "transaction_legs_loaded": transaction_legs_loaded,
                 "accounts_loaded": accounts_loaded,
-                "pages_fetched": len(page_results),
-                "gcs_objects_written": len(page_results) + 1,
+                "expenses_fetched": sum(len(page.rows) for page in expense_page_results),
+                "expenses_loaded": expenses_loaded,
+                "expense_pages_fetched": len(expense_page_results),
+                "pages_fetched": len(page_results) + len(expense_page_results),
+                "gcs_objects_written": len(page_results) + len(expense_page_results) + 1,
             },
         )
         log.info(
-            "Revolut raw load complete in %.0fs: %s pages, %s transaction legs, %s accounts",
+            "Revolut raw load complete in %.0fs: %s transaction pages, %s transaction legs, %s expense pages, %s expenses, %s accounts",
             time.monotonic() - start_monotonic,
             len(page_results),
             transaction_legs_loaded,
+            len(expense_page_results),
+            expenses_loaded,
             accounts_loaded,
         )
     except Exception as exc:
