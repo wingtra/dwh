@@ -63,10 +63,8 @@ PAGE_SIZE = int(os.environ.get("REVOLUT_PAGE_SIZE", "1000"))
 MAX_PAGES = int(os.environ.get("REVOLUT_MAX_PAGES", "100"))
 HTTP_TIMEOUT_SECONDS = int(os.environ.get("REVOLUT_HTTP_TIMEOUT_SECONDS", "60"))
 LOOKBACK_DAYS = int(os.environ.get("REVOLUT_LOOKBACK_DAYS", "31"))
-EXPENSE_LOOKBACK_DAYS = int(os.environ.get("REVOLUT_EXPENSE_LOOKBACK_DAYS", "36500"))
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 TRANSACTION_WATERMARK_RESOURCE = "transactions.created_at"
-EXPENSE_WATERMARK_RESOURCE = "expenses.expense_date"
 
 
 TRANSACTIONS_SCHEMA = [
@@ -188,8 +186,6 @@ RUNS_SCHEMA = [
     bigquery.SchemaField("expense_pages_fetched", "INT64"),
     bigquery.SchemaField("expense_from_date", "TIMESTAMP"),
     bigquery.SchemaField("expense_to_date", "TIMESTAMP"),
-    bigquery.SchemaField("expense_watermark_before", "TIMESTAMP"),
-    bigquery.SchemaField("expense_watermark_after", "TIMESTAMP"),
     bigquery.SchemaField("pages_fetched", "INT64"),
     bigquery.SchemaField("gcs_objects_written", "INT64"),
     bigquery.SchemaField("error_message", "STRING"),
@@ -398,6 +394,7 @@ class RevolutClient:
         path: str,
         params: dict[str, Any] | None = None,
         page_number: int | None = None,
+        cursor_field: str = "created_at",
     ) -> Any:
         url = f"{API_BASE_URL}/{path.lstrip('/')}"
         started = time.monotonic()
@@ -408,7 +405,7 @@ class RevolutClient:
             response.raise_for_status()
             data = response.json()
             row_count = len(data) if isinstance(data, list) else None
-            cursor = data[-1].get("created_at") if isinstance(data, list) and data else None
+            cursor = data[-1].get(cursor_field) if isinstance(data, list) and data else None
             self.recorder.record(
                 path=path,
                 params=params,
@@ -438,132 +435,94 @@ class RevolutClient:
             return data
         raise ValueError(f"Unexpected accounts response shape: {type(data)}")
 
-    def transaction_pages(self, from_created_at: str, to_created_at: str) -> list[tuple[int, list[dict[str, Any]]]]:
+    def _pages_backwards(
+        self,
+        path: str,
+        cursor_field: str,
+        from_value: str,
+        to_value: str,
+        page_size: int,
+        label: str,
+    ) -> list[tuple[int, list[dict[str, Any]]]]:
+        """Paginate a list endpoint backwards by a timestamp cursor field."""
         pages: list[tuple[int, list[dict[str, Any]]]] = []
         seen_ids: set[str] = set()
-        page_to = to_created_at
+        page_to = to_value
 
         for page_number in range(1, MAX_PAGES + 1):
             params = {
-                "from": from_created_at,
+                "from": from_value,
                 "to": page_to,
-                "count": PAGE_SIZE,
+                "count": page_size,
             }
-            page = self._get("/transactions", params=params, page_number=page_number)
+            page = self._get(path, params=params, page_number=page_number, cursor_field=cursor_field)
             if not page:
                 break
             if not isinstance(page, list):
-                raise ValueError(f"Unexpected transactions response shape: {type(page)}")
+                raise ValueError(f"Unexpected {label} response shape: {type(page)}")
 
             new_rows = []
-            for transaction in page:
-                transaction_id = transaction.get("id")
-                if transaction_id and transaction_id in seen_ids:
+            for row in page:
+                row_id = row.get("id")
+                if row_id and row_id in seen_ids:
                     continue
-                if transaction_id:
-                    seen_ids.add(transaction_id)
-                new_rows.append(transaction)
+                if row_id:
+                    seen_ids.add(row_id)
+                new_rows.append(row)
 
-            last_created_at = page[-1].get("created_at")
-            first_created_at = page[0].get("created_at")
+            last_cursor = page[-1].get(cursor_field)
+            first_cursor = page[0].get(cursor_field)
             log.info(
-                "Fetched page %s: %s rows, %s new, first_created_at=%s, last_created_at=%s",
+                "Fetched %s page %s: %s rows, %s new, first_%s=%s, last_%s=%s",
+                label,
                 page_number,
                 len(page),
                 len(new_rows),
-                first_created_at,
-                last_created_at,
+                cursor_field,
+                first_cursor,
+                cursor_field,
+                last_cursor,
             )
 
             if new_rows:
                 pages.append((page_number, new_rows))
 
-            if len(page) < PAGE_SIZE or not last_created_at or not new_rows:
+            if len(page) < page_size or not last_cursor or not new_rows:
                 break
-            if last_created_at <= from_created_at:
+            if last_cursor <= from_value:
                 break
-            if last_created_at >= page_to:
+            if last_cursor >= page_to:
                 raise ValueError(
-                    "Revolut pagination did not move backwards by created_at; "
-                    f"page_to={page_to}, last_created_at={last_created_at}"
+                    f"Revolut {label} pagination did not move backwards by {cursor_field}; "
+                    f"page_to={page_to}, last_{cursor_field}={last_cursor}"
                 )
-            if len(page) == PAGE_SIZE and first_created_at == last_created_at:
+            if len(page) == page_size and first_cursor == last_cursor:
                 raise ValueError(
-                    "Ambiguous Revolut pagination: full page has identical created_at values. "
+                    f"Ambiguous Revolut {label} pagination: full page has identical {cursor_field} values. "
                     "Cannot safely advance without a cursor/tie-breaker."
                 )
-            page_to = last_created_at
+            page_to = last_cursor
         else:
             raise ValueError(f"Reached REVOLUT_MAX_PAGES={MAX_PAGES}; refusing to silently truncate")
 
         return pages
+
+    def transaction_pages(self, from_created_at: str, to_created_at: str) -> list[tuple[int, list[dict[str, Any]]]]:
+        return self._pages_backwards(
+            "/transactions", "created_at", from_created_at, to_created_at, PAGE_SIZE, "transaction"
+        )
 
     def expense_pages(self, from_expense_date: str, to_expense_date: str) -> list[tuple[int, list[dict[str, Any]]]]:
         """Fetch the current expense state as append-only snapshots.
 
-        The Expenses API only paginates by ``expense_date``; it does not expose
-        an update timestamp. The caller therefore uses a long lookback so that
-        state, category, and receipt changes on old expenses are recaptured.
+        The Expenses API only paginates by ``expense_date`` and does not expose
+        an update timestamp, so the caller re-reads the full window from
+        REVOLUT_EXPENSE_START_DATE to recapture state, category, and receipt
+        changes on old expenses. The API caps page size at 500.
         """
-        pages: list[tuple[int, list[dict[str, Any]]]] = []
-        seen_ids: set[str] = set()
-        page_to = to_expense_date
-        page_size = min(PAGE_SIZE, 500)
-
-        for page_number in range(1, MAX_PAGES + 1):
-            params = {
-                "from": from_expense_date,
-                "to": page_to,
-                "count": page_size,
-            }
-            page = self._get("/expenses", params=params, page_number=page_number)
-            if not page:
-                break
-            if not isinstance(page, list):
-                raise ValueError(f"Unexpected expenses response shape: {type(page)}")
-
-            new_rows = []
-            for expense in page:
-                expense_id = expense.get("id")
-                if expense_id and expense_id in seen_ids:
-                    continue
-                if expense_id:
-                    seen_ids.add(expense_id)
-                new_rows.append(expense)
-
-            last_expense_date = page[-1].get("expense_date")
-            first_expense_date = page[0].get("expense_date")
-            log.info(
-                "Fetched expense page %s: %s rows, %s new, first_expense_date=%s, last_expense_date=%s",
-                page_number,
-                len(page),
-                len(new_rows),
-                first_expense_date,
-                last_expense_date,
-            )
-
-            if new_rows:
-                pages.append((page_number, new_rows))
-
-            if len(page) < page_size or not last_expense_date or not new_rows:
-                break
-            if last_expense_date <= from_expense_date:
-                break
-            if last_expense_date >= page_to:
-                raise ValueError(
-                    "Revolut expense pagination did not move backwards by expense_date; "
-                    f"page_to={page_to}, last_expense_date={last_expense_date}"
-                )
-            if len(page) == page_size and first_expense_date == last_expense_date:
-                raise ValueError(
-                    "Ambiguous Revolut expense pagination: full page has identical expense_date values. "
-                    "Cannot safely advance without a cursor/tie-breaker."
-                )
-            page_to = last_expense_date
-        else:
-            raise ValueError(f"Reached REVOLUT_MAX_PAGES={MAX_PAGES}; refusing to silently truncate")
-
-        return pages
+        return self._pages_backwards(
+            "/expenses", "expense_date", from_expense_date, to_expense_date, min(PAGE_SIZE, 500), "expense"
+        )
 
 
 def _table_id(table_name: str) -> str:
@@ -924,12 +883,9 @@ def main() -> None:
     watermark_before = _current_watermark(bq_client, TRANSACTION_WATERMARK_RESOURCE, START_CREATED_AT)
     from_created_at = _window_start(watermark_before, START_CREATED_AT, LOOKBACK_DAYS)
     to_created_at = _utc_now()
-    expense_watermark_before = _current_watermark(
-        bq_client, EXPENSE_WATERMARK_RESOURCE, EXPENSE_START_DATE
-    )
-    expense_from_date = _window_start(
-        expense_watermark_before, EXPENSE_START_DATE, EXPENSE_LOOKBACK_DAYS
-    )
+    # Expenses have no source update timestamp, so every run re-reads the full
+    # window from EXPENSE_START_DATE; a watermark would never narrow it.
+    expense_from_date = EXPENSE_START_DATE
     expense_to_date = to_created_at
     start_monotonic = time.monotonic()
 
@@ -950,8 +906,6 @@ def main() -> None:
         "expense_pages_fetched": 0,
         "expense_from_date": expense_from_date,
         "expense_to_date": expense_to_date,
-        "expense_watermark_before": expense_watermark_before,
-        "expense_watermark_after": None,
         "pages_fetched": 0,
         "gcs_objects_written": 0,
         "error_message": None,
@@ -1000,7 +954,6 @@ def main() -> None:
         expenses_loaded = _load_append(bq_client, "expenses", expense_rows, EXPENSES_SCHEMA)
         _load_append(bq_client, "_api_requests", recorder.rows, API_REQUESTS_SCHEMA)
         _record_watermark(bq_client, TRANSACTION_WATERMARK_RESOURCE, to_created_at, run_id)
-        _record_watermark(bq_client, EXPENSE_WATERMARK_RESOURCE, expense_to_date, run_id)
 
         finished_at = _utc_now()
         _record_run(
@@ -1016,7 +969,6 @@ def main() -> None:
                 "expenses_fetched": sum(len(page.rows) for page in expense_page_results),
                 "expenses_loaded": expenses_loaded,
                 "expense_pages_fetched": len(expense_page_results),
-                "expense_watermark_after": expense_to_date,
                 "pages_fetched": len(page_results) + len(expense_page_results),
                 "gcs_objects_written": len(page_results) + len(expense_page_results) + 1,
             },

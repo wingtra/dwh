@@ -108,12 +108,24 @@ models:
       - name: expense_date
         description: Source timestamp of the expense.
         tests: [not_null]
+      - name: expense_date_utc
+        description: Expense date in UTC.
       - name: expense_date_zurich
         description: Expense date in the Europe/Zurich reporting timezone.
         tests: [not_null]
+      - name: submitted_at
+        description: Source timestamp when the expense was submitted, when populated.
+      - name: submitted_date_zurich
+        description: Submission date in Europe/Zurich. NULL when not yet submitted.
+      - name: completed_at
+        description: Source timestamp when the expense completed, when populated.
+      - name: completed_date_zurich
+        description: Completion date in Europe/Zurich. NULL when not completed.
       - name: expense_state
-        description: Current Revolut expense lifecycle state, such as missing_info, pending_approval, approved, rejected, or completed.
-        tests: [not_null]
+        description: >
+          Current Revolut expense lifecycle state, such as missing_info,
+          pending_approval, approved, rejected, or completed. NULL when the
+          source omits the state field; the source does not guarantee it.
       - name: transaction_type
         description: Source transaction type associated with the expense, when populated.
       - name: description
@@ -134,5 +146,21 @@ models:
         description: Source expense splits with accounting category and tax-rate data, preserved as JSON.
       - name: receipt_ids
         description: IDs of attached source receipts, preserved as JSON. Receipt files are not downloaded.
+      - name: run_id
+        description: Raw-loader run id for the DL row selected as the current state.
+      - name: loaded_at
+        description: Load timestamp for the DL row selected as the current state.
+      - name: extracted_at
+        description: Extraction timestamp for the DL row selected as the current state.
+      - name: request_from_expense_date
+        description: Start of the expense_date window requested from the API for the selected DL row.
+      - name: request_to_expense_date
+        description: End of the expense_date window requested from the API for the selected DL row.
+      - name: gcs_uri
+        description: Immutable GCS JSONL object containing the raw API response for the selected DL row.
+      - name: page_number
+        description: API page number of the selected DL row within its extraction run.
+      - name: row_index
+        description: Row position of the selected DL row within its extraction run.
       - name: expense_raw_json
         description: Full raw Revolut expense JSON kept for audit and downstream parsing.

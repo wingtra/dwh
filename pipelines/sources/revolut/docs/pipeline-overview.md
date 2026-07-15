@@ -84,9 +84,10 @@ Repository location: `pipelines/sources/revolut/`
 - Paginates backwards by `created_at`
 - Fetches expenses from `/expenses`
 - Paginates expenses backwards by `expense_date` (maximum 500 per request)
-- Re-reads the configured expense history window because the Expenses API does
-  not expose an update timestamp; this retains later approval, category, label,
-  and receipt-ID changes as append-only snapshots
+- Re-reads the full expense history from `REVOLUT_EXPENSE_START_DATE` every run
+  because the Expenses API does not expose an update timestamp; this retains
+  later approval, category, label, and receipt-ID changes as append-only
+  snapshots (expenses therefore use no watermark)
 - Retries transient HTTP errors and rate limits
 - Fails rather than silently truncating if `REVOLUT_MAX_PAGES` is reached
 
