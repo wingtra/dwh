@@ -5,15 +5,12 @@
     normalizes source fields and retains the source JSON; it does not join or
     reshape the transaction fact.
 
-    Materialized as a table (unlike the sibling views): every loader run
-    re-appends the full expense history, so the DL log grows with each run and
-    a view would re-run the dedup window over the whole log on every query.
 */
 
 {{
     config(
         alias='expenses',
-        materialized='table'
+        materialized='view'
     )
 }}
 
