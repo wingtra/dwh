@@ -171,6 +171,78 @@ models:
         description: Consolidated BOM quantity per finished drone from IMM.
         tests: [not_null]
 
+  - name: bom_leaf_components
+    description: |
+      Leaf-level BOM explosion for costing. For every active product that
+      is the output of an active BOM, walks the tree (ONE active BOM per
+      template, lowest sequence then id — Odoo's _bom_find order) and
+      keeps only leaf components (no own active BOM), so line costs can
+      be summed per root without double-counting sub-assemblies.
+      Quantities are per 1 unit of root, divided by the BOM header's
+      product_qty (all current BOMs produce qty 1). Subcontracted BOMs
+      are expanded like normal ones — the subcontracting fee is NOT part
+      of the roll-up. Differs from bom_consolidated_components, which
+      expands every active BOM per template (double-counts SUB-CAMBEAM's
+      two active BOMs) and keeps intermediate rows.
+      Grain: one row per (root_product_id, component_product_id).
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: il
+        consumer_type: warehouse_internal
+        grain: root_product_x_leaf_component
+    columns:
+      - name: root_product_id
+        description: Variant id of the product whose BOM tree was exploded.
+        tests: [not_null]
+      - name: component_product_id
+        description: Variant id of the leaf component (has no own active BOM).
+        tests: [not_null]
+      - name: qty_per_unit
+        description: Total qty of the leaf component per 1 unit of root, summed across all expansion paths.
+        tests: [not_null]
+      - name: depth_max
+        description: Deepest expansion level at which this component appears under this root.
+
+  - name: product_primary_vendor_prices
+    description: |
+      Fixed primary-vendor purchase price per product variant, normalised
+      to CHF per base unit. One row per variant with at least one
+      supplierinfo line. Pick rule (Jan Skret's 2026-07-15 handover):
+      vendor_priority = 1 first, fallback lowest sequence; never switches
+      to a cheaper non-primary vendor. NOTE: differs from
+      product_dimensions' primary supplier (sequence only) on 14
+      templates as of 2026-07-15 — aligning that is an open decision.
+      Discount applied; price converted purchase UoM -> base UoM
+      (price * purchase_uom_factor / base_uom_factor) and to CHF at the
+      latest company-1 rate (rate = foreign per 1 CHF, so divide).
+      Expired pricelist lines lose ties and are flagged, not dropped.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: il
+        consumer_type: warehouse_internal
+        grain: product_variant
+    columns:
+      - name: product_id
+        description: Primary key. Variant the price applies to.
+        tests: [not_null, unique]
+      - name: vendor_partner_id
+        description: FK to res_partner — the fixed primary vendor.
+      - name: currency_code
+        description: ISO code of the vendor pricelist currency.
+      - name: purchase_uom_name
+        description: Purchase UoM the vendor price is quoted in (e.g. 'Roll of 500').
+      - name: is_price_expired
+        description: The picked pricelist line has date_end in the past.
+        tests: [not_null]
+      - name: net_price_purchase_uom
+        description: Discounted vendor price in original currency, per purchase UoM.
+      - name: net_price_base_unit_chf
+        description: Discounted vendor price converted to CHF per base unit.
+
   - name: bom_consolidated_components
     description: |
       Recursive BOM-explosion aggregate. For every active BOM, walks all

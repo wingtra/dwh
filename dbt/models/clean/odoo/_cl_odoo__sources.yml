@@ -15,6 +15,7 @@ sources:
       - name: purchase_order
       - name: purchase_order_line
       - name: res_currency
+      - name: res_currency_rate
       - name: res_partner
       - name: res_users
       - name: sale_order
