@@ -39,6 +39,18 @@ sources:
               - not_null
               - unique
           - name: _dlt_deleted_at
+      - name: commissions
+        description: >
+          Custom object "Commissions" (objectTypeId 2-53702763): one record
+          per RevOps-reviewed commissionable item (drone/payload/license) with
+          a manual Confirmed/Declined/Pending status and USD sku_revenue. The
+          eligibility layer behind the "Monthly NRR vs. RR" sheet.
+        columns:
+          - name: object_id
+            tests:
+              - not_null
+              - unique
+          - name: _dlt_deleted_at
 
 models:
   - name: cl_hubspot__contacts
@@ -77,3 +89,18 @@ models:
         description: Recurring revenue amount in recurring_revenue_currency (deal currency; NOT reliably USD).
       - name: recurring_revenue_currency
         description: Deal currency code (USD/EUR/CHF); NULL means unknown, sheet logic falls back to unconverted 30.44-day rounding.
+  - name: cl_hubspot__commissions
+    description: >
+      Typed clean commissions from the HubSpot current mirror. One row per
+      non-deleted commission record; restricted to year = 2026 (documented
+      project policy — see model SQL header and AGENTS.md Clean Layer). The
+      Confirmed/sku_revenue eligibility logic is only valid 2026 forward.
+    columns:
+      - name: commission_id
+        tests: [not_null, unique]
+      - name: object_type
+        description: Drone | License | Payload.
+      - name: status
+        description: Confirmed | Declined | Pending.
+      - name: sku_revenue
+        description: USD revenue credited (0 for Declined/Pending).

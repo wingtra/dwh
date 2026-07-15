@@ -154,3 +154,48 @@ models:
         description: Line-item net amount in source currency.
       - name: amount_usd
         description: Line-item net amount converted to USD at start-date FX.
+
+  - name: commissions
+    description: |
+      One row per commissionable item (drone / payload / license line) from
+      the RevOps commission object (HubSpot 2-53702763) — the manual
+      Confirmed/Declined/Pending eligibility layer behind the "Monthly NRR vs.
+      RR" sheet. Reusable across drone/payload/license reporting. Exposes the
+      review status, object_type, sku_revenue, and the is_counted flag
+      (Confirmed AND sku_revenue > 0). Scope 2026 (inherited from
+      cl_hubspot__commissions policy). No report-specific cuts here.
+    config:
+      meta:
+        owner: alex.overholser
+        domain: revops
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: commission_item
+        synonyms: ['commissions', 'commissionable items', 'sales-out eligibility', 'confirmed items']
+        sample_questions:
+          - 'How many confirmed commissionable items in Q2 2026?'
+          - 'Which drones/payloads/licenses count toward sales-out?'
+        pii: none
+    columns:
+      - name: commission_id
+        description: Commission record id (HubSpot object_id). Primary key.
+        tests: [not_null, unique]
+      - name: object_type
+        description: Item category.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Drone', 'License', 'Payload']
+      - name: status
+        description: Manual RevOps review status.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Confirmed', 'Declined', 'Pending']
+      - name: is_counted
+        description: TRUE when status = Confirmed and sku_revenue > 0 (counts toward reported revenue).
+        tests: [not_null]
+      - name: sku_revenue
+        description: USD revenue credited to the item (0 for Declined/Pending).
