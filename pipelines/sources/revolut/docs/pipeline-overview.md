@@ -2,9 +2,9 @@
 
 ## Overview
 
-A weekly automated pipeline that extracts Revolut Business accounts and
-transactions, stores immutable raw API responses in GCS, and appends flattened
-raw tables into BigQuery for downstream modeling.
+A weekly automated pipeline that extracts Revolut Business accounts,
+transactions, and expenses; stores immutable raw API responses in GCS; and
+appends flattened raw tables into BigQuery for downstream modeling.
 
 Repository location: `pipelines/sources/revolut/`
 
@@ -30,9 +30,9 @@ Repository location: `pipelines/sources/revolut/`
 │  │              │    │              │    │                   │  │
 │  │  Private key │    │  Accounts    │    │  Write JSONL to   │  │
 │  │  + refresh   │    │  Transactions│    │  GCS              │  │
-│  │  token from  │    │  Paginated   │    │                   │  │
-│  │  Secret Mgr  │    │  by created  │    │  Append flattened │  │
-│  │              │    │  timestamp   │    │  rows to BQ       │  │
+│  │  token from  │    │  Expenses    │    │                   │  │
+│  │  Secret Mgr  │    │  Paginated   │    │  Append flattened │  │
+│  │              │    │  by source   │    │  rows to BQ       │  │
 │  └──────────────┘    └──────────────┘    └───────────────────┘  │
 │             │                  │                    │            │
 │             │                  │                    │            │
@@ -71,6 +71,7 @@ Repository location: `pipelines/sources/revolut/`
 - Ensures these tables exist:
   - `transactions`
   - `accounts`
+  - `expenses`
   - `_pipeline_runs`
   - `_api_requests`
   - `_watermarks`
@@ -81,13 +82,19 @@ Repository location: `pipelines/sources/revolut/`
 - Fetches accounts from `/accounts`
 - Fetches transactions from `/transactions`
 - Paginates backwards by `created_at`
+- Fetches expenses from `/expenses`
+- Paginates expenses backwards by `expense_date` (maximum 500 per request)
+- Re-reads the configured expense history window because the Expenses API does
+  not expose an update timestamp; this retains later approval, category, label,
+  and receipt-ID changes as append-only snapshots
 - Retries transient HTTP errors and rate limits
 - Fails rather than silently truncating if `REVOLUT_MAX_PAGES` is reached
 
 ### 5. Land raw extracts and load BigQuery
-- Writes raw account and transaction API responses as JSONL to GCS
+- Writes raw account, transaction, and expense API responses as JSONL to GCS
 - Flattens account rows into `dl_revolut.accounts`
 - Flattens transaction legs into `dl_revolut.transactions`
+- Flattens expense snapshots into `dl_revolut.expenses`
 - Appends rows instead of mutating historical extracts
 - Writes request audit rows into `_api_requests`
 - Updates `_watermarks` after a successful run
@@ -99,6 +106,7 @@ Repository location: `pipelines/sources/revolut/`
 |---|---|---|
 | `transactions` | One row per transaction leg per extraction run | Append-only raw transaction facts with raw JSON retained |
 | `accounts` | One row per account per extraction run | Append-only raw account snapshots |
+| `expenses` | One row per expense per extraction run | Append-only expense snapshots with optional transaction link, accounting labels/splits, receipt IDs, and raw JSON retained |
 | `_pipeline_runs` | One row per loader run | Run status, extracted window, loaded counts, errors |
 | `_api_requests` | One row per API request | API audit trail, status code, duration, page metadata |
 | `_watermarks` | One row per resource | Cursor state for the next extraction window |

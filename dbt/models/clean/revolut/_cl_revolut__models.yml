@@ -91,3 +91,48 @@ models:
         description: Revolut account balance in `account_currency` as BigQuery NUMERIC.
       - name: balance
         description: Revolut account balance in `account_currency`.
+
+  - name: cl_revolut__expenses
+    description: |
+      Cleaned current-state Revolut Business expenses from the append-only
+      `dl_revolut.expenses` extraction log. One row per expense ID, selected
+      from the latest extraction because the source API does not publish an
+      update timestamp. It is source-faithful and intentionally does not join
+      to or alter the Revolut transaction model.
+    columns:
+      - name: expense_id
+        description: Stable unique identifier for a Revolut expense.
+        tests: [not_null, unique]
+      - name: transaction_id
+        description: Optional source-provided related Revolut transaction ID. It is NULL for expenses without a related transaction.
+      - name: expense_date
+        description: Source timestamp of the expense.
+        tests: [not_null]
+      - name: expense_date_zurich
+        description: Expense date in the Europe/Zurich reporting timezone.
+        tests: [not_null]
+      - name: expense_state
+        description: Current Revolut expense lifecycle state, such as missing_info, pending_approval, approved, rejected, or completed.
+        tests: [not_null]
+      - name: transaction_type
+        description: Source transaction type associated with the expense, when populated.
+      - name: description
+        description: Expense description entered in Revolut.
+      - name: payer
+        description: Source-provided expense payer.
+      - name: merchant
+        description: Source-provided merchant name.
+      - name: spent_amount_numeric
+        description: Source expense amount as BigQuery NUMERIC in `spent_currency`.
+      - name: spent_amount
+        description: Source expense amount as FLOAT64 in `spent_currency`.
+      - name: spent_currency
+        description: Currency code for `spent_amount`.
+      - name: labels
+        description: Source accounting labels, preserved as JSON.
+      - name: splits
+        description: Source expense splits with accounting category and tax-rate data, preserved as JSON.
+      - name: receipt_ids
+        description: IDs of attached source receipts, preserved as JSON. Receipt files are not downloaded.
+      - name: expense_raw_json
+        description: Full raw Revolut expense JSON kept for audit and downstream parsing.

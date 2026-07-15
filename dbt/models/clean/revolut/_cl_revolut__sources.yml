@@ -40,6 +40,31 @@ sources:
             description: Immutable GCS JSONL object containing the source API response for this row.
           - name: _dlt_deleted_at
             description: Soft-delete marker. CL models keep only rows where this is NULL.
+      - name: expenses
+        description: Append-only snapshots of Revolut Business expenses. The Expenses API is paginated by expense date and does not provide an update timestamp, so the loader re-extracts the configured history window to retain state and categorisation changes.
+        columns:
+          - name: expense_id
+            tests: [not_null]
+          - name: expense_date
+            tests: [not_null]
+          - name: transaction_id
+            description: Optional Revolut transaction UUID linked to the expense. Not every expense has a related transaction.
+          - name: splits
+            description: Source-provided expense splits, including category and tax-rate details when configured in Revolut.
+          - name: labels
+            description: Source-provided accounting labels, such as cost centre.
+          - name: receipt_ids
+            description: IDs of receipts attached to the expense. Receipt content is intentionally not downloaded by this loader.
+          - name: expense_raw_json
+            description: Full raw Revolut expense JSON kept for audit and downstream parsing.
+          - name: run_id
+            description: Raw-loader run id that produced the extracted snapshot.
+          - name: extracted_at
+            description: Timestamp when the raw-loader run extracted this snapshot.
+          - name: gcs_uri
+            description: Immutable GCS JSONL object containing the source API response for this snapshot.
+          - name: _dlt_deleted_at
+            description: Soft-delete marker. CL models keep only rows where this is NULL.
       - name: _pipeline_runs
         description: Raw-loader run audit table keyed by run_id.
       - name: _api_requests
