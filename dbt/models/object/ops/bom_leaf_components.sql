@@ -24,10 +24,10 @@
     Recursion guard: depth <= 15 (deepest tree today is 5).
     Zero-qty BOM lines are dropped.
 
+    Public contract for "what does one unit of X ultimately consist of"
+    queries; bl.bom_material_costs prices this rollup.
     Grain: one row per (root_product_id, component_product_id).
 */
-
-{{ config(materialized='table') }}
 
 with recursive
 

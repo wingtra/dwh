@@ -25,10 +25,10 @@
     valid ones at equal priority/sequence and are flagged, not dropped:
     an expired price is still more information than none.
 
+    Public contract for "what do we pay our fixed vendor per unit"
+    queries; bl.bom_material_costs prices BOM rollups with it.
     Grain: one row per product_id.
 */
-
-{{ config(materialized='table') }}
 
 with
 

@@ -22,6 +22,11 @@ bl_*  business-layer dbt models
 `dl_*` is produced by source loaders under `pipelines/sources/<source>/`. dbt
 reads DL datasets through `source()` definitions, but does not own DL loading.
 
+The object layer is the public contract of the warehouse. Business-layer
+models consume OL models (plus seeds/metadata where needed) — never CL or DL
+directly. If a BL model needs something that no OL model exposes, build or
+extend the OL model first; there is no BL without OL.
+
 dbt model folders map to the layers:
 
 ```text
