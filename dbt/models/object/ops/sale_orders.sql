@@ -14,6 +14,10 @@
 
     Shipment KPI math (lead times, 14-day targets, coverage) lives in BL,
     not here. CEE (company_id=8) is filtered in CL.
+
+    `shipment_status_hubspot` is the HubSpot-synced status, distinct from
+    Odoo's own `shipment_status` — the two can diverge (order-closure
+    reporting relies on that divergence, see `bl.unconfirmed_deliveries`).
 */
 
 with customer_resolution as (
@@ -73,6 +77,7 @@ select
     org.organization_name                                                        as customer_name,
     sp.user_name                                                                 as salesperson_name,
     so.shipment_status,
+    so.shipment_status_hubspot,
     so.delivery_status,
     so.invoice_status,
     so.destination,

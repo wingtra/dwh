@@ -437,6 +437,43 @@ models:
       - name: value_signed
         description: quantity_signed * price_unit. Approximate inventory value movement. price_unit is often NULL on internal moves.
 
+  - name: deliveries
+    description: |
+      Delivery/transfer object. One row per Odoo `stock_picking`, enriched with its picking-type
+      classification (receipt / delivery / internal transfer / dropship / repair). All picking
+      states and types are included — filter to `picking_type_code = 'outgoing'` for deliveries
+      specifically, and to whichever states matter for the use case (`is_assigned_or_draft` flags
+      the states BL's "unconfirmed delivery" definition cares about).
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: stock_picking
+        synonyms: ['picking', 'transfer', 'delivery', 'shipment header', 'outgoing delivery']
+    columns:
+      - name: picking_id
+        description: FK to Odoo `stock_picking.id`.
+        tests: [not_null, unique]
+      - name: sale_order_id
+        description: FK to ol.sale_orders. NULL for pickings not tied to a sale (receipts, internal transfers).
+      - name: picking_state
+        description: Picking lifecycle state. Odoo order is draft -> waiting -> confirmed -> assigned (ready) -> done -> cancel.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['draft', 'waiting', 'confirmed', 'assigned', 'done', 'cancel']
+      - name: picking_type_code
+        description: Operation classification. 'outgoing' = delivery to customer.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['incoming', 'outgoing', 'internal', 'mrp_operation', 'dropship', 'repair_operation']
+      - name: is_assigned_or_draft
+        description: TRUE when picking_state is 'assigned' or 'draft' — the states BL's "unconfirmed delivery" definition treats as not yet reconciled.
+        tests: [not_null]
+
   - name: organizations
     description: |
       External companies we transact with. Vendor, customer, both, or unflagged. Excludes contacts, addresses, and internal-user partner records — those live in `ol.contacts` and `il.users`.
@@ -629,6 +666,8 @@ models:
         description: Salesperson display name via `il.users`.
       - name: shipment_status
         description: Wingtra custom shipment workflow status string.
+      - name: shipment_status_hubspot
+        description: Shipment status synced from HubSpot. Can diverge from Odoo's own `shipment_status`/`delivery_status` when the two systems haven't reconciled — `bl.unconfirmed_deliveries` reports on that divergence deliberately, using this field rather than Odoo's own status.
       - name: delivery_status
         description: Odoo delivery status of the SO.
       - name: invoice_status

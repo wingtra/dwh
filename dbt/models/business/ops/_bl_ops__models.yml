@@ -301,3 +301,65 @@ models:
         tests: [not_null]
       - name: lead_time_days
         description: pickup_date - cleared_date in calendar days. NULL when cleared_date missing; negative on data errors. Dashboard shows median and average side by side; median is the steering number — long-tail outliers (100-518 days) inflate averages.
+
+  - name: unconfirmed_deliveries
+    description: |
+      One row per outgoing delivery line item on a sale order that HubSpot says is Shipped/Canceled
+      but that still has an open (assigned/draft) Odoo delivery. Wingtra AG only. Behind the ops
+      dashboard used to clean these up in Odoo (Marco Schicker's 2026-07-20 handover). Line
+      quantity/amount comes from the delivery's own move quantity, not the SO line's total ordered
+      quantity, since a line can span several partial deliveries. `is_price_anomaly` catches lines
+      where price_unit combined with an out-of-range discount produces a nonsensical negative
+      amount — exclude these from any SUM(amount_excl_tax) rollup, they stay in the model so they
+      remain visible for cleanup. Snapshot as of the last Odoo->BigQuery sync, not real-time.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: bl
+        consumer_type: bi_and_reporting
+        grain: delivery_line_item
+        synonyms: ['unconfirmed delivery', 'open delivery on closed order', 'unreconciled shipment']
+        sample_questions:
+          - Which shipped or cancelled sale orders still have an open delivery in Odoo?
+          - What is the total value of unconfirmed deliveries by customer?
+          - How many delivery lines have a price anomaly?
+    columns:
+      - name: sale_order_id
+        description: FK to `ol.sale_orders`.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('sale_orders')
+                field: sale_order_id
+      - name: picking_id
+        description: FK to `ol.deliveries` — the open outgoing delivery.
+        tests: [not_null]
+      - name: sale_order_line_id
+        description: FK to `ol.sale_order_lines`. NULL if the delivered move has no matching SO line.
+      - name: sale_order_name
+        description: SO number (e.g. S08043).
+      - name: shipment_status_hubspot
+        description: HubSpot shipment status that qualified this order (Shipped or Canceled).
+        tests:
+          - not_null
+      - name: odoo_sale_order_state
+        description: Odoo's own SO workflow state, for comparison against the HubSpot status.
+      - name: delivery_number
+        description: Outgoing delivery number (e.g. WWH/OUT/05543).
+      - name: delivery_state
+        description: Odoo picking state. Always 'assigned' or 'draft' by construction.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['assigned', 'draft']
+      - name: item
+        description: Product name. Falls back to 'product_id <id>' when the move has no resolvable product name.
+      - name: is_price_anomaly
+        description: TRUE when price_unit * (1 - discount/100) is negative — a data-entry error (seen on duplicate "(copy)" products), not a real negative amount. Exclude from totals, don't drop the row.
+        tests: [not_null]
+      - name: qty_delivered
+        description: Quantity on this delivery's move — not the SO line's total ordered quantity.
+      - name: amount_excl_tax
+        description: qty_delivered * price_unit * (1 - discount/100), rounded. Currency varies per order (see `currency`) — never sum across orders without grouping by currency.

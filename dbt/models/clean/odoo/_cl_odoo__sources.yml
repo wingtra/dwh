@@ -22,6 +22,8 @@ sources:
       - name: sale_order_line
       - name: stock_location
       - name: stock_move
+      - name: stock_picking
+      - name: stock_picking_type
       - name: stock_quant
       - name: uom_uom
       - name: wt_product_expert
