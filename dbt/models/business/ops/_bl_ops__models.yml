@@ -113,7 +113,7 @@ models:
       subcontracting fees (RAY propellers) are on neither cost side.
     config:
       meta:
-        owner: lucille.thomanek
+        owner: jan.skret
         domain: operations
         layer: bl
         consumer_type: bi_and_reporting
