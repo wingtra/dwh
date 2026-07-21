@@ -6,6 +6,12 @@ SELECT
         (customs clearance), pickup_date, actual_arrival_date, order_type,
         and legacy_wingtra (comma-separated legacy shipment ids; multiple
         ids mean the SO was merged during the 2025 migration).
+
+        `shipment_status` is Odoo's own field; `shipment_status_hubspot` is
+        synced from HubSpot and can diverge from it (e.g. HubSpot says
+        Shipped/Canceled while Odoo's delivery is still open) — ops
+        reporting on order closure uses the HubSpot field deliberately, not
+        Odoo's, so keep both distinct downstream.
     */
 
     /* IDS */
@@ -51,6 +57,7 @@ SELECT
     invoice_status,
     delivery_status,
     shipment_status,
+    shipment_status_hubspot,
     origin as source_document,
     client_order_ref as customer_order_reference,
     destination,
