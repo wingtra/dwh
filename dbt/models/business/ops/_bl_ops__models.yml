@@ -187,6 +187,26 @@ models:
       - name: vendor_line_cost_chf
         description: qty_per_unit * vendor_unit_cost_chf. Sum per root for the primary-vendor material cost of one unit.
 
+  - name: bom_material_costs_current
+    description: |
+      Latest weekly snapshot of bom_material_costs, exposed as a view for
+      "current state" dashboard cards (dash_*_current precedent). Same
+      columns and grain as bom_material_costs, restricted to
+      MAX(snapshot_week). Use the full snapshot table for trends.
+    config:
+      meta:
+        owner: jan.skret
+        domain: operations
+        layer: bl
+        consumer_type: bi_and_reporting
+        grain: root_product+component
+        synonyms: ['current BoM cost', 'material cost now']
+    columns:
+      - name: root_product_id
+        tests: [not_null]
+      - name: component_product_id
+        tests: [not_null]
+
   - name: shipment_lead_times
     description: |
       One row per confirmed Wingtra AG customer sale order with a pickup date (AG-only scope and
