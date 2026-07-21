@@ -770,6 +770,26 @@ models:
       - name: is_active
         description: Only active currencies are usable in Odoo; inactive rows kept for historical orders.
 
+  - name: res_currency_rate
+    description: |
+      Cleaned Odoo daily currency rates per company. One row per (currency, company, rate_date).
+      Odoo convention: `rate` = foreign currency units per 1 unit of the company currency
+      (company 1 = Wingtra AG = CHF), so foreign -> CHF conversion DIVIDES by the rate.
+    columns:
+      - name: currency_rate_id
+        tests: [not_null, unique]
+      - name: currency_id
+        description: FK to res_currency.
+        tests: [not_null]
+      - name: company_id
+        description: Rates are company-specific; company 1 (Wingtra AG, base CHF) is the one used for CHF conversions.
+      - name: rate_date
+        description: Effective date of the rate. Rename of Odoo `name`.
+        tests: [not_null]
+      - name: rate
+        description: Foreign units per 1 CHF (for company 1). Divide foreign amounts by this to get CHF.
+        tests: [not_null]
+
   - name: sale_order
     description: |
       Cleaned Odoo sale order headers. One row per SO across all states (draft / sent / sale / cancel).

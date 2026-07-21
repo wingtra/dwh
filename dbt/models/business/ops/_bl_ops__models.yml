@@ -94,6 +94,99 @@ models:
       - name: part_number
         description: R&D PDM number from `product_template.part_number`. A "/" prefix signals R&D obsolete revision; rows with a `/`-prefix and zero on-hand are filtered out by the scope rule.
 
+  - name: bom_material_costs
+    description: |
+      Weekly snapshot of flattened (leaf-level) BOM material cost. One row per
+      (snapshot_week, root product, leaf component); consumption mart behind the
+      "BoM Material Cost Monitor" Metabase dashboard (Jan Skret's 2026-07-15
+      handover, baseline reproduced against dl_odoo the same day). Two costings
+      per component in CHF per base unit: Odoo AVCO (standard_price, company 1)
+      and the FIXED primary vendor's pricelist price (vendor_priority = 1,
+      fallback lowest sequence; discount applied; purchase UoM -> base unit;
+      latest company-1 FX). Covers ALL products with an active BOM — filter
+      root_product_code (Jan's 9 SKUs) or root_product_role = 'end_product' in
+      dashboards. snapshot_week = Monday of the ISO week; the current week's
+      partition is overwritten on every daily run (current week = live state,
+      past weeks frozen at their last run). Consumers wanting "current" filter
+      to MAX(snapshot_week). Material cost only — no operations, labor, or
+      cost_share overheads (totals sit 0-3% below Odoo's stored parent cost);
+      subcontracting fees (RAY propellers) are on neither cost side.
+    config:
+      meta:
+        owner: jan.skret
+        domain: operations
+        layer: bl
+        consumer_type: bi_and_reporting
+        grain: snapshot_week+root_product+component
+        synonyms: ['BoM cost', 'material cost monitor', 'AVCO vs vendor price', 'flattened BOM cost', 'MCC']
+        sample_questions:
+          - What is the current material cost of WR-BUNDLE at AVCO vs primary vendor prices?
+          - How did the vendor-price cost of WR-ADD-SURV61 evolve over the last quarter?
+          - Which components moved the most week-over-week?
+          - Which BOM components have missing or suspicious prices?
+    columns:
+      - name: snapshot_week
+        description: Monday of the ISO week the snapshot belongs to. Partitioning column. Current week is refreshed daily; past weeks are frozen. Filter MAX(snapshot_week) for "current".
+        tests: [not_null]
+      - name: root_product_id
+        description: Variant id of the product whose BOM tree was exploded. FK to ol.products.
+        tests: [not_null]
+      - name: component_product_id
+        description: Variant id of the leaf component. FK to ol.products. Unique per (snapshot_week, root_product_id).
+        tests: [not_null]
+      - name: vendor_partner_id
+        description: Fixed primary vendor of the component (vendor_priority = 1, fallback lowest sequence). NULL when the component has no supplierinfo line.
+      - name: root_product_code
+        description: Odoo default_code of the root product. Dashboard filter for the monitored SKUs.
+        tests: [not_null]
+      - name: root_product_name
+        description: Root product display name.
+      - name: root_product_role
+        description: Manufacturing role of the root from ol.products (end_product / subassembly). Filter end_product for sellable goods.
+      - name: component_product_code
+        description: Odoo default_code of the leaf component.
+      - name: component_product_name
+        description: Leaf component display name.
+      - name: vendor_name
+        description: Primary vendor display name.
+      - name: vendor_currency_code
+        description: ISO code of the vendor pricelist currency (pre-conversion).
+      - name: purchase_uom_name
+        description: Purchase UoM the vendor price is quoted in (e.g. 'Roll of 500'). The CHF unit cost is already converted to the base unit.
+      - name: price_flags
+        description: 'Comma-separated data-quality flags, NULL = clean: missing_vendor_price, zero_vendor_price, missing_avco, zero_avco, expired_vendor_price, extreme_ratio (vendor/AVCO unit ratio > 20x either way). For group-by dashboards; the boolean columns are for filtering.'
+      - name: is_vendor_price_missing
+        description: Component has no supplierinfo line at all.
+        tests: [not_null]
+      - name: is_vendor_price_zero
+        description: Primary vendor price is exactly 0 (e.g. Bossard screws priced via framework agreements).
+        tests: [not_null]
+      - name: is_vendor_price_expired
+        description: The picked pricelist line has date_end in the past. The price is still used (better than none) but flagged.
+        tests: [not_null]
+      - name: is_avco_missing
+        description: No company-1 AVCO on the component (never receipted at Wingtra AG, e.g. 1474).
+        tests: [not_null]
+      - name: is_avco_zero
+        description: Company-1 AVCO is exactly 0.
+        tests: [not_null]
+      - name: is_extreme_ratio
+        description: Vendor and AVCO unit costs differ by more than 20x either way — usually a pack-price pricelist error.
+        tests: [not_null]
+      - name: qty_per_unit
+        description: Total qty of the leaf component consumed per 1 unit of root, summed across all BOM paths.
+        tests: [not_null]
+      - name: avco_unit_cost_chf
+        description: Odoo AVCO per base unit (product_product.standard_price, company 1, CHF).
+      - name: vendor_price_purchase_uom
+        description: Discounted primary-vendor price in the original currency, per purchase UoM (as quoted).
+      - name: vendor_unit_cost_chf
+        description: Discounted primary-vendor price converted to CHF per base unit (purchase-UoM factors + latest company-1 FX).
+      - name: avco_line_cost_chf
+        description: qty_per_unit * avco_unit_cost_chf. Sum per root for the AVCO material cost of one unit.
+      - name: vendor_line_cost_chf
+        description: qty_per_unit * vendor_unit_cost_chf. Sum per root for the primary-vendor material cost of one unit.
+
   - name: shipment_lead_times
     description: |
       One row per confirmed Wingtra AG customer sale order with a pickup date (AG-only scope and
