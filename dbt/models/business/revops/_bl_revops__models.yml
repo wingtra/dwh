@@ -65,113 +65,16 @@ models:
     # Grain (month_date x license_type_label) is enforced by the singular
     # test tests/assert_arr_bl_grain_unique.sql (no dbt_utils in this project).
 
-  - name: drone_nrr
-    description: |
-      Drone Non-Recurring Revenue by quarter (2026), reproduced from the
-      commission object. A drone counts when its commission is Confirmed with
-      sku_revenue > 0 (object-layer is_counted). All drone revenue is NRR.
-      Reconciles to the "Monthly NRR vs. RR" sheet Drones block:
-      Q1 1,839,215 / Q2 2,378,345 at the 2026-07-08 sync (object + sheet are
-      both live, so figures drift ~1-2% between syncs). Quarterly only — the
-      commission object has quarter + year but no month.
-    config:
-      meta:
-        owner: alex.overholser
-        domain: revops
-        layer: bl
-        consumer_type: bi_and_reporting
-        grain: year_quarter
-        synonyms: ['drone NRR', 'drones sold', 'drone revenue', 'NRR drones']
-        sample_questions:
-          - 'What was drone NRR in Q2 2026?'
-          - 'How many drones were sold (counted) per quarter?'
-        pii: none
-    columns:
-      - name: year
-        tests: [not_null]
-      - name: quarter
-        description: Q1..Q4 (commission object quarter).
-        tests:
-          - not_null
-          - accepted_values:
-              arguments:
-                values: ['Q1', 'Q2', 'Q3', 'Q4']
-      - name: drones_sold
-        description: Count of Confirmed drone commissions with sku_revenue > 0.
-        tests: [not_null]
-      - name: drone_nrr_revenue
-        description: SUM(sku_revenue) over the counted drone commissions (USD).
-        tests: [not_null]
-    # Grain (year x quarter) enforced by singular test
-    # tests/assert_drone_nrr_grain_unique.sql (no dbt_utils in this project).
-
-  - name: payload_nrr
-    description: |
-      Payload NRR by quarter (2026). Confirmed payload commissions with
-      sku_revenue > 0 (all NRR). Q1 1,304,903 / Q2 1,933,734 vs sheet
-      1,302,903 / 1,944,054 (99.85% / 99.5%). Quarterly grain.
-    config:
-      meta:
-        owner: alex.overholser
-        domain: revops
-        layer: bl
-        grain: year_quarter
-    columns:
-      - name: year
-        tests: [not_null]
-      - name: quarter
-        tests:
-          - not_null
-          - accepted_values:
-              arguments:
-                values: ['Q1', 'Q2', 'Q3', 'Q4']
-      - name: payloads_sold
-        tests: [not_null]
-      - name: payload_nrr_revenue
-        tests: [not_null]
-    # Grain enforced by tests/assert_payload_nrr_grain_unique.sql.
-
-  - name: license_nrr_rr
-    description: |
-      License NRR + RR by quarter (2026), full set. Non-annual (ADP/PPK/SYW) +
-      LiDAR HW + sheet-only manual NRR = license_nrr; annual licenses + LiDAR
-      SW/renewal/upgrade = license_rr. Classified by sku_revenue value via seed
-      sku_license_category_seed. Commissioned non-annual NRR reconciles EXACT to
-      the sheet "NRR Licenses" row (120,700 / 109,310); the manual line
-      (Professional Services incl. Armasuisse, seed nonannual_manual_nrr_seed,
-      308,095 in Q2) has no commission object and closes the sheet Q2 non-annual
-      exactly. Quarterly grain.
-    config:
-      meta:
-        owner: alex.overholser
-        domain: revops
-        layer: bl
-        grain: year_quarter
-    columns:
-      - name: year
-        tests: [not_null]
-      - name: quarter
-        tests:
-          - not_null
-          - accepted_values:
-              arguments:
-                values: ['Q1', 'Q2', 'Q3', 'Q4']
-      - name: license_nrr
-        tests: [not_null]
-      - name: license_rr
-        tests: [not_null]
-    # Grain enforced by tests/assert_license_nrr_rr_grain_unique.sql;
-    # value coverage by tests/assert_license_values_mapped.sql.
-
   - name: nrr_reporting
     description: |
-      Unified NRR reporting model (2026), quarterly. One row per
-      year x quarter x product_type (Drone | License | Payload), consolidating
-      the three component BL models (drone_nrr, payload_nrr, license_nrr_rr)
-      into a single reporting surface. nrr_usd + rr_usd per component; Drone and
-      Payload are all-NRR (rr_usd = 0), License carries both. units_sold is NULL
-      for License. Tariff / Shipping / Cloud are out of scope (not in the
-      commission-object model). Built as a thin union over the component models.
+      Unified NRR reporting model (2026), quarterly — the single RevOps NRR/RR
+      reporting surface. One row per year x quarter x product_type
+      (Drone | License | Payload), built directly from the commission object.
+      Replaces the former per-component models (drone_nrr / payload_nrr /
+      license_nrr_rr), consolidated here per Lucille. nrr_usd + rr_usd per
+      component; Drone and Payload are all-NRR (rr_usd = 0), License carries
+      both (seed split + sheet-only manual NRR). units_sold is NULL for License.
+      Tariff / Shipping / Cloud are out of scope (not in the commission object).
     config:
       meta:
         owner: alex.overholser

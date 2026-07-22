@@ -1,6 +1,6 @@
 -- Coverage test: every counted License commission value must exist in the
 -- sku_license_category_seed. A hit here = an unmapped license value silently
--- dropped from license_nrr_rr; add it to the seed.
+-- dropped from nrr_reporting's License rows; add it to the seed.
 
 select
     l.sku_revenue,
