@@ -77,6 +77,14 @@ seeds:
         revenue_class: STRING
         nrr_amount: FLOAT64
         rr_amount: FLOAT64
+    nonannual_manual_nrr_seed:
+      +schema: seeds_revops
+      +tags: ["daily", "revops"]
+      +column_types:
+        year: INT64
+        quarter: STRING
+        item: STRING
+        nrr_usd: FLOAT64
     claude_seat_usage_2026_05:
       +column_types:
         user_email: STRING

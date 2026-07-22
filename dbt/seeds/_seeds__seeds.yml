@@ -178,3 +178,18 @@ seeds:
         tests: [not_null]
       - name: rr_amount
         tests: [not_null]
+
+  - name: nonannual_manual_nrr_seed
+    description: |
+      Sheet-only non-annual NRR items that have NO commission object (parallel
+      to Cloud, which is sheet-only RR). Currently: Professional Services incl.
+      Service to Armasuisse, assumed 100% NRR. Folded into bl_revops.license_nrr_rr.
+      Reconciles the sheet Q2 non-annual line exactly (commissioned 109,310 +
+      manual 308,095 = sheet 417,405). Grain: year x quarter x item.
+    columns:
+      - name: year
+        tests: [not_null]
+      - name: quarter
+        tests: [not_null]
+      - name: nrr_usd
+        tests: [not_null]

@@ -134,10 +134,13 @@ models:
   - name: license_nrr_rr
     description: |
       License NRR + RR by quarter (2026), full set. Non-annual (ADP/PPK/SYW) +
-      LiDAR HW = license_nrr; annual licenses + LiDAR SW/renewal/upgrade =
-      license_rr. Classified by sku_revenue value via seed
-      sku_license_category_seed. Non-annual NRR reconciles EXACT to the sheet
-      "NRR Licenses" row (120,700 / 109,310). Quarterly grain.
+      LiDAR HW + sheet-only manual NRR = license_nrr; annual licenses + LiDAR
+      SW/renewal/upgrade = license_rr. Classified by sku_revenue value via seed
+      sku_license_category_seed. Commissioned non-annual NRR reconciles EXACT to
+      the sheet "NRR Licenses" row (120,700 / 109,310); the manual line
+      (Professional Services incl. Armasuisse, seed nonannual_manual_nrr_seed,
+      308,095 in Q2) has no commission object and closes the sheet Q2 non-annual
+      exactly. Quarterly grain.
     config:
       meta:
         owner: alex.overholser
@@ -159,3 +162,52 @@ models:
         tests: [not_null]
     # Grain enforced by tests/assert_license_nrr_rr_grain_unique.sql;
     # value coverage by tests/assert_license_values_mapped.sql.
+
+  - name: nrr_reporting
+    description: |
+      Unified NRR reporting model (2026), quarterly. One row per
+      year x quarter x product_type (Drone | License | Payload), consolidating
+      the three component BL models (drone_nrr, payload_nrr, license_nrr_rr)
+      into a single reporting surface. nrr_usd + rr_usd per component; Drone and
+      Payload are all-NRR (rr_usd = 0), License carries both. units_sold is NULL
+      for License. Tariff / Shipping / Cloud are out of scope (not in the
+      commission-object model). Built as a thin union over the component models.
+    config:
+      meta:
+        owner: alex.overholser
+        domain: revops
+        layer: bl
+        consumer_type: bi_and_reporting
+        grain: year_quarter_product_type
+        synonyms: ['NRR reporting', 'NRR by product', 'NRR by component', 'NRR vs RR by product type']
+        sample_questions:
+          - 'What is NRR by product type for Q2 2026?'
+          - 'How much RR did licenses contribute per quarter?'
+          - 'How many drones and payloads were sold per quarter?'
+        pii: none
+    columns:
+      - name: year
+        tests: [not_null]
+      - name: quarter
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Q1', 'Q2', 'Q3', 'Q4']
+      - name: product_type
+        description: Drone | License | Payload.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Drone', 'License', 'Payload']
+      - name: nrr_usd
+        description: Non-recurring revenue for the component in the quarter (USD).
+        tests: [not_null]
+      - name: rr_usd
+        description: Recurring revenue for the component (USD); 0 for Drone/Payload.
+        tests: [not_null]
+      - name: units_sold
+        description: Counted units (drones/payloads); NULL for License.
+    # Grain (year x quarter x product_type) enforced by
+    # tests/assert_nrr_reporting_grain_unique.sql.
