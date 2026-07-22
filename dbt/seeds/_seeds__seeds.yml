@@ -155,3 +155,41 @@ seeds:
       - name: export_date
         description: Date the members export was downloaded.
         tests: [not_null]
+
+  - name: sku_license_category_seed
+    description: |
+      Maps License commission sku_revenue value -> revenue class + NRR/RR
+      split. sku_type is NULL on License commission records, so classification
+      is by value (unambiguous per the SKU master list). Invariant:
+      nrr_amount + rr_amount = sku_revenue (SPLIT rows carry the LiDAR HW/SW
+      split, e.g. 48700 -> 23200 NRR + 25500 RR). Legacy 60445 = UNKNOWN.
+    columns:
+      - name: sku_revenue
+        description: License commission sku_revenue value (join key), USD.
+        tests: [not_null, unique]
+      - name: revenue_class
+        description: NRR | RR | SPLIT | UNKNOWN.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['NRR', 'RR', 'SPLIT', 'UNKNOWN']
+      - name: nrr_amount
+        tests: [not_null]
+      - name: rr_amount
+        tests: [not_null]
+
+  - name: nonannual_manual_nrr_seed
+    description: |
+      Sheet-only non-annual NRR items that have NO commission object (parallel
+      to Cloud, which is sheet-only RR). Currently: Professional Services incl.
+      Service to Armasuisse, assumed 100% NRR. Folded into bl_revops.license_nrr_rr.
+      Reconciles the sheet Q2 non-annual line exactly (commissioned 109,310 +
+      manual 308,095 = sheet 417,405). Grain: year x quarter x item.
+    columns:
+      - name: year
+        tests: [not_null]
+      - name: quarter
+        tests: [not_null]
+      - name: nrr_usd
+        tests: [not_null]
