@@ -1,6 +1,82 @@
 version: 2
 
 models:
+  - name: bom_leaf_components
+    description: |
+      Leaf-level BOM explosion. For every active product that is the
+      output of an active BOM, walks the tree (ONE active BOM per
+      template, lowest sequence then id — Odoo's _bom_find order) and
+      keeps only leaf components (no own active BOM), so line costs and
+      quantities can be summed per root without double-counting
+      sub-assemblies. Answers "one unit of X ultimately consists of how
+      many of Y?". Quantities are per 1 unit of root, divided by the BOM
+      header's product_qty (all current BOMs produce qty 1).
+      Subcontracted BOMs are expanded like normal ones — the
+      subcontracting fee is NOT part of the roll-up. Differs from
+      il.bom_consolidated_components, which expands every active BOM per
+      template (double-counts SUB-CAMBEAM's two active BOMs) and keeps
+      intermediate rows.
+      Grain: one row per (root_product_id, component_product_id).
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: root_product_x_leaf_component
+        synonyms: ['flattened BOM', 'BOM explosion', 'BOM rollup', 'leaf components']
+    columns:
+      - name: root_product_id
+        description: Variant id of the product whose BOM tree was exploded. FK to ol.products.
+        tests: [not_null]
+      - name: component_product_id
+        description: Variant id of the leaf component (has no own active BOM). FK to ol.products.
+        tests: [not_null]
+      - name: qty_per_unit
+        description: Total qty of the leaf component per 1 unit of root, summed across all expansion paths.
+        tests: [not_null]
+      - name: depth_max
+        description: Deepest expansion level at which this component appears under this root.
+
+  - name: product_primary_vendor_prices
+    description: |
+      Fixed primary-vendor purchase price per product variant, normalised
+      to CHF per base unit. One row per variant with at least one
+      supplierinfo line. Pick rule (Jan Skret's 2026-07-15 handover):
+      vendor_priority = 1 first, fallback lowest sequence; never switches
+      to a cheaper non-primary vendor. NOTE: differs from ol.products'
+      primary supplier (sequence only, via il.product_dimensions) on 14
+      templates as of 2026-07-15 — aligning that is an open decision.
+      Discount applied; price converted purchase UoM -> base UoM
+      (price * purchase_uom_factor / base_uom_factor) and to CHF at the
+      latest company-1 rate (rate = foreign per 1 CHF, so divide).
+      Expired pricelist lines lose ties and are flagged, not dropped.
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: product_variant
+        synonyms: ['vendor price', 'primary supplier price', 'purchase price CHF']
+    columns:
+      - name: product_id
+        description: Primary key. Variant the price applies to. FK to ol.products.
+        tests: [not_null, unique]
+      - name: vendor_partner_id
+        description: FK to res_partner — the fixed primary vendor.
+      - name: currency_code
+        description: ISO code of the vendor pricelist currency.
+      - name: purchase_uom_name
+        description: Purchase UoM the vendor price is quoted in (e.g. 'Roll of 500').
+      - name: is_price_expired
+        description: The picked pricelist line has date_end in the past.
+        tests: [not_null]
+      - name: net_price_purchase_uom
+        description: Discounted vendor price in original currency, per purchase UoM.
+      - name: net_price_base_unit_chf
+        description: Discounted vendor price converted to CHF per base unit.
+
   - name: products
     description: |
       Wingtra runs one variant per template, so SKU = template = variant. CEE products are filtered upstream. The `standard_price_ag` column is a moving-average cost (the Odoo "standard price" field name is misleading).
@@ -361,6 +437,43 @@ models:
       - name: value_signed
         description: quantity_signed * price_unit. Approximate inventory value movement. price_unit is often NULL on internal moves.
 
+  - name: deliveries
+    description: |
+      Delivery/transfer object. One row per Odoo `stock_picking`, enriched with its picking-type
+      classification (receipt / delivery / internal transfer / dropship / repair). All picking
+      states and types are included — filter to `picking_type_code = 'outgoing'` for deliveries
+      specifically, and to whichever states matter for the use case (`is_assigned_or_draft` flags
+      the states BL's "unconfirmed delivery" definition cares about).
+    config:
+      meta:
+        owner: lucille.thomanek
+        domain: operations
+        layer: ol
+        consumer_type: bi_and_reporting
+        grain: stock_picking
+        synonyms: ['picking', 'transfer', 'delivery', 'shipment header', 'outgoing delivery']
+    columns:
+      - name: picking_id
+        description: FK to Odoo `stock_picking.id`.
+        tests: [not_null, unique]
+      - name: sale_order_id
+        description: FK to ol.sale_orders. NULL for pickings not tied to a sale (receipts, internal transfers).
+      - name: picking_state
+        description: Picking lifecycle state. Odoo order is draft -> waiting -> confirmed -> assigned (ready) -> done -> cancel.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['draft', 'waiting', 'confirmed', 'assigned', 'done', 'cancel']
+      - name: picking_type_code
+        description: Operation classification. 'outgoing' = delivery to customer.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['incoming', 'outgoing', 'internal', 'mrp_operation', 'dropship', 'repair_operation']
+      - name: is_assigned_or_draft
+        description: TRUE when picking_state is 'assigned' or 'draft' — the states BL's "unconfirmed delivery" definition treats as not yet reconciled.
+        tests: [not_null]
+
   - name: organizations
     description: |
       External companies we transact with. Vendor, customer, both, or unflagged. Excludes contacts, addresses, and internal-user partner records — those live in `ol.contacts` and `il.users`.
@@ -553,6 +666,8 @@ models:
         description: Salesperson display name via `il.users`.
       - name: shipment_status
         description: Wingtra custom shipment workflow status string.
+      - name: shipment_status_hubspot
+        description: Shipment status synced from HubSpot. Can diverge from Odoo's own `shipment_status`/`delivery_status` when the two systems haven't reconciled — `bl.unconfirmed_deliveries` reports on that divergence deliberately, using this field rather than Odoo's own status.
       - name: delivery_status
         description: Odoo delivery status of the SO.
       - name: invoice_status

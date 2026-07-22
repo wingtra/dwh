@@ -30,6 +30,45 @@ models:
       - name: scrap_id
         description: FK to stock_scrap when the move is the scrap-out leg.
 
+  - name: stock_picking
+    description: |
+      Cleaned Odoo stock pickings (transfers). One row per picking header, grouping one or more
+      stock_move lines. `picking_type_id` (join stock_picking_type) tells you receipt vs delivery
+      vs internal transfer. Does not carry `shipment_status_hubspot` — that field also exists on
+      this raw table, but the canonical copy lives on sale_order (see there); not duplicated here.
+      CEE (company_id=8) is filtered out per project policy.
+    columns:
+      - name: picking_id
+        description: Primary key. Odoo `stock_picking.id`.
+        tests: [not_null, unique]
+      - name: sale_order_id
+        description: FK to sale_order. Odoo `sale_id`. NULL for pickings not tied to a sale (receipts, internal transfers).
+      - name: picking_state
+        description: Picking lifecycle state. Odoo order is draft -> waiting -> confirmed -> assigned (ready) -> done -> cancel.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['draft', 'waiting', 'confirmed', 'assigned', 'done', 'cancel']
+      - name: picking_type_id
+        description: FK to stock_picking_type. Determines receipt/delivery/internal-transfer classification.
+
+  - name: stock_picking_type
+    description: |
+      Cleaned Odoo picking types (receipt / delivery / internal transfer definitions). One row per
+      type, one per warehouse operation. `picking_type_name` is extracted from the translated JSON
+      source field (falls back en_GB -> en_US, matching the product_template pattern).
+      CEE (company_id=8) is filtered out per project policy.
+    columns:
+      - name: picking_type_id
+        description: Primary key. Odoo `stock_picking_type.id`.
+        tests: [not_null, unique]
+      - name: picking_type_code
+        description: Operation classification. Odoo `code`.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['incoming', 'outgoing', 'internal', 'mrp_operation', 'dropship', 'repair_operation']
+
   - name: product_product
     description: |
       Cleaned Odoo product variants. One row per SKU. Wingtra carries exactly one variant per product_template (1-1, verified), so variant-level and template-level queries are interchangeable.
@@ -770,6 +809,26 @@ models:
       - name: is_active
         description: Only active currencies are usable in Odoo; inactive rows kept for historical orders.
 
+  - name: res_currency_rate
+    description: |
+      Cleaned Odoo daily currency rates per company. One row per (currency, company, rate_date).
+      Odoo convention: `rate` = foreign currency units per 1 unit of the company currency
+      (company 1 = Wingtra AG = CHF), so foreign -> CHF conversion DIVIDES by the rate.
+    columns:
+      - name: currency_rate_id
+        tests: [not_null, unique]
+      - name: currency_id
+        description: FK to res_currency.
+        tests: [not_null]
+      - name: company_id
+        description: Rates are company-specific; company 1 (Wingtra AG, base CHF) is the one used for CHF conversions.
+      - name: rate_date
+        description: Effective date of the rate. Rename of Odoo `name`.
+        tests: [not_null]
+      - name: rate
+        description: Foreign units per 1 CHF (for company 1). Divide foreign amounts by this to get CHF.
+        tests: [not_null]
+
   - name: sale_order
     description: |
       Cleaned Odoo sale order headers. One row per SO across all states (draft / sent / sale / cancel).
@@ -817,6 +876,8 @@ models:
           - accepted_values:
               arguments:
                 values: ['paid', 'under_warranty', 'internal_use', 'free_material', 'exception_booking']
+      - name: shipment_status_hubspot
+        description: Shipment status synced from HubSpot. Diverges from Odoo's own `shipment_status` when the two systems haven't been reconciled (e.g. HubSpot Shipped/Canceled while the Odoo delivery is still open) — that divergence is itself the signal ops reporting watches for.
       - name: legacy_shipment_ids
         description: Comma-separated legacy shipment ids from the 2025 migration (Odoo `legacy_wingtra`). More than one id means the SO was merged from several legacy shipments.
       - name: amount_total
